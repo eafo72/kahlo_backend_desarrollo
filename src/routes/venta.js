@@ -1479,21 +1479,33 @@ app.get('/horarios/:tourid/fecha/:fecha/boletos/:boletos', async (req, res) => {
                 lugares_disp = viaje.lugares_disp;
                 disponible = viaje.lugares_disp >= boletos;
             } else {
-                // No hay viajeTour, consultar el tour para max_pasajeros
-                // Si es el último miércoles del mes, usar cupo máximo de 51
-                if (esUltimoMiercoles) {
-                    lugares_disp = 51;
-                    disponible = 51 >= boletos;
-                } else {
-                    let queryTour = `SELECT max_pasajeros FROM tour WHERE id = ${tourId}`;
-                    let tourResult = await db.pool.query(queryTour);
-                    let max_pasajeros = tourResult[0][0]?.max_pasajeros;
-                    if (typeof max_pasajeros === 'number') {
-                        lugares_disp = max_pasajeros;
-                        disponible = max_pasajeros >= boletos;
-                    } else {
-                        lugares_disp = 'sin_info_tour';
+                // No hay viajeTour: priorizar capacidad configurada en fecha
+                // horario puede venir con campo max_personas (NULL = heredar, 0 = cerrado)
+                if (typeof horario.max_personas !== 'undefined' && horario.max_personas !== null) {
+                    if (parseInt(horario.max_personas, 10) === 0) {
+                        // horario cerrado
+                        lugares_disp = 0;
                         disponible = false;
+                    } else {
+                        lugares_disp = parseInt(horario.max_personas, 10);
+                        disponible = lugares_disp >= boletos;
+                    }
+                } else {
+                    // No hay capacidad definida en fecha: aplicar reglas anteriores
+                    if (esUltimoMiercoles) {
+                        lugares_disp = 51;
+                        disponible = 51 >= boletos;
+                    } else {
+                        let queryTour = `SELECT max_pasajeros FROM tour WHERE id = ${tourId}`;
+                        let tourResult = await db.pool.query(queryTour);
+                        let max_pasajeros = tourResult[0][0]?.max_pasajeros;
+                        if (typeof max_pasajeros === 'number') {
+                            lugares_disp = max_pasajeros;
+                            disponible = max_pasajeros >= boletos;
+                        } else {
+                            lugares_disp = 'sin_info_tour';
+                            disponible = false;
+                        }
                     }
                 }
             }
@@ -2290,10 +2302,29 @@ app.post('/crear-touroperador', async (req, res) => {
                 const fecha_regreso = newfecha.getFullYear() + "-" + ("0" + (newfecha.getMonth() + 1)).slice(-2) + "-" + ("0" + newfecha.getDate()).slice(-2) + " " + ("0" + (newfecha.getHours())).slice(-2) + ":" + ("0" + (newfecha.getMinutes())).slice(-2);
 
                 if (disponibilidad.length === 0) {
-                    // Crear nuevo viajeTour
-                    query = `SELECT * FROM tour WHERE id = ${tourId}`;
-                    let result = await connection.query(query);
-                    result = result[0][0];
+                    // Buscar capacidad configurada en tabla fecha para este tour/dia/hora
+                    const diaSeleccionado = weekDay(fecha_ida);
+                    let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND DATE_FORMAT(hora_salida, '%H:%i') = '${hora[0]}:${hora[1]}' LIMIT 1`;
+                    let fechaRes = await connection.query(queryFecha);
+                    let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+                    let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
+                    if (fechaCapacity === 0) {
+                        return res.status(400).json({ msg: "Horario cerrado", error: true });
+                    }
+
+                    let initialCapacity;
+                    if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                        initialCapacity = parseInt(fechaCapacity, 10);
+                    } else if (esUltimoMiercoles) {
+                        initialCapacity = 51;
+                    } else {
+                        initialCapacity = result.max_pasajeros;
+                    }
+                    query = `INSERT INTO viajeTour 
+                        (fecha_ida, fecha_regreso, lugares_disp, created_at, updated_at, tour_id, guia_id, geo_llegada, geo_salida) 
+                        VALUES 
+                        ('${fecha_ida_formateada}', '${fecha_regreso}', '${initialCapacity}', '${fecha}', '${fecha}', '${tourId}', '${guia[0].value}', '${null}', '${null}')`;
 
                     let guia = result.guias;
                     guia = JSON.parse(guia);

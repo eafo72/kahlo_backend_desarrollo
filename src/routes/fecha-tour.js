@@ -40,7 +40,7 @@ app.get('/obtenerbytour/:id', async (req, res) => {
 
 app.post('/crear', async (req, res) => {
     try {
-        const { dia, hora_salida, hora_regreso, status, apply_for_operator, tour_id } = req.body
+        const { dia, hora_salida, hora_regreso, status, apply_for_operator, tour_id, max_personas } = req.body
 
         let errors = Array();
 
@@ -64,6 +64,13 @@ app.post('/crear', async (req, res) => {
             errors.push({ msg: "El campo tour_id debe de contener un valor" });
         }
 
+        if (typeof max_personas !== 'undefined' && max_personas !== null && max_personas !== '') {
+            const mp = parseInt(max_personas, 10);
+            if (isNaN(mp) || mp < 0) {
+                errors.push({ msg: "El campo max_personas debe ser un entero mayor o igual a 0 o vacío para heredar" });
+            }
+        }
+
         if (errors.length >= 1) {
 
             return res.status(400)
@@ -80,10 +87,12 @@ app.post('/crear', async (req, res) => {
         let time = today.getHours() + ':' + today.getMinutes() + ':' + today.getSeconds();
         let fecha = date + ' ' + time;
 
+        const maxPersonasSQL = (typeof max_personas === 'undefined' || max_personas === null || max_personas === '') ? 'NULL' : `${parseInt(max_personas, 10)}`;
+
         let query = `INSERT INTO fecha 
-                        (dia, hora_salida, hora_regreso, status, applyForOperator, created_at, updated_at, tour_id) 
-                        VALUES 
-                        ('${dia}', '${hora_salida}', '${hora_regreso}', '${status}', '${apply_for_operator}', '${fecha}', '${fecha}', '${tour_id}')`;
+                (dia, hora_salida, hora_regreso, status, applyForOperator, created_at, updated_at, tour_id, max_personas) 
+                VALUES 
+                ('${dia}', '${hora_salida}', '${hora_regreso}', '${status}', '${apply_for_operator}', '${fecha}', '${fecha}', '${tour_id}', ${maxPersonasSQL})`;
 
         let result = await db.pool.query(query);
         result = result[0];
@@ -107,7 +116,7 @@ app.post('/crear', async (req, res) => {
 
 app.put('/set', async (req, res) => {
     try {
-        const { id, dia, hora_salida, hora_regreso, status, apply_for_operator } = req.body
+        const { id, dia, hora_salida, hora_regreso, status, apply_for_operator, max_personas } = req.body
 
         let errors = Array();
 
@@ -127,6 +136,13 @@ app.put('/set', async (req, res) => {
             apply_for_operator = 0;
         }
 
+        if (typeof max_personas !== 'undefined' && max_personas !== null && max_personas !== '') {
+            const mp = parseInt(max_personas, 10);
+            if (isNaN(mp) || mp < 0) {
+                errors.push({ msg: "El campo max_personas debe ser un entero mayor o igual a 0 o vacío para heredar" });
+            }
+        }
+
         if (errors.length >= 1) {
 
             return res.status(400)
@@ -143,14 +159,17 @@ app.put('/set', async (req, res) => {
         let time = today.getHours() + ':' + today.getMinutes() + ':' + today.getSeconds();
         let fecha = date + ' ' + time;
 
+        const maxPersonasSQL = (typeof max_personas === 'undefined' || max_personas === null || max_personas === '') ? 'NULL' : `${parseInt(max_personas, 10)}`;
+
         let query = `UPDATE fecha SET
-                        dia              = '${dia}',
-                        hora_salida      = '${hora_salida}',
-                        hora_regreso     = '${hora_regreso}', 
-                        status           = '${status}', 
-                        applyForOperator = '${apply_for_operator}', 
-                        updated_at       = '${fecha}' 
-                        WHERE id         =  ${id}`;
+                dia              = '${dia}',
+                hora_salida      = '${hora_salida}',
+                hora_regreso     = '${hora_regreso}', 
+                status           = '${status}', 
+                applyForOperator = '${apply_for_operator}', 
+                max_personas     = ${maxPersonasSQL},
+                updated_at       = '${fecha}' 
+                WHERE id         =  ${id}`;
 
         let result = await db.pool.query(query);
         result = result[0];
