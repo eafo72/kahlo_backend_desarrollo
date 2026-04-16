@@ -228,6 +228,7 @@ const camaraRoutes = require('./src/routes/camara')
 const placesRoutes = require('./src/routes/places')
 const translateRoutes = require('./src/routes/traduccion')
 const placesMedanoRouter = require('./src/routes/placesMedano');
+const eventosEspecialesRoutes = require('./src/routes/eventos_especiales');
 
 const fotografiasModule = require('./src/routes/fotografias');
 const fotografiasRoutes = fotografiasModule.router;
@@ -252,6 +253,7 @@ app.use('/camara', camaraRoutes)
 app.use('/places', placesRoutes)
 app.use('/traductor', translateRoutes)
 app.use('/places-medano', placesMedanoRouter);
+app.use('/admin/eventos-especiales', eventosEspecialesRoutes);
 
 // Stripe webhook endpoint directo (sin prefijo /venta)
 app.use('/stripe', ventaRoutes)
