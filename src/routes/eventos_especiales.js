@@ -130,6 +130,9 @@ app.post('/crear', imageController.upload, async (req, res) => {
       imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
     }
 
+    // Si no se envía slug, generarlo desde el título
+    let computedSlug = slug && slug.trim() !== '' ? slug : titulo.toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+
     // Iniciar transacción
     conn = await db.pool.getConnection();
     await conn.beginTransaction();
@@ -137,7 +140,7 @@ app.post('/crear', imageController.upload, async (req, res) => {
     let qInsert = `INSERT INTO eventos_especiales
       (titulo, slug, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at)
       VALUES
-      ('${titulo}', '${slug}', '${descripcion_corta || ''}', '${descripcion_larga || ''}', ${imagenUrl ? "'"+imagenUrl+"'" : 'NULL'}, ${fecha_inicio_agenda ? "'"+fecha_inicio_agenda+"'" : 'NULL'}, ${fecha_fin_agenda ? "'"+fecha_fin_agenda+"'" : 'NULL'}, ${activo ? activo : 1}, ${destacado ? destacado : 0}, 0, '${fecha}', '${fecha}')`;
+      ('${titulo}', '${computedSlug}', '${descripcion_corta || ''}', '${descripcion_larga || ''}', ${imagenUrl ? "'"+imagenUrl+"'" : 'NULL'}, ${fecha_inicio_agenda ? "'"+fecha_inicio_agenda+"'" : 'NULL'}, ${fecha_fin_agenda ? "'"+fecha_fin_agenda+"'" : 'NULL'}, ${activo ? activo : 1}, ${destacado ? destacado : 0}, 0, '${fecha}', '${fecha}')`;
 
     let result = await conn.query(qInsert);
     result = result[0];
@@ -187,3 +190,48 @@ app.post('/crear', imageController.upload, async (req, res) => {
 })
 
 module.exports = app
+
+// Eliminar evento (horarios y boletos) por id
+app.delete('/delete/:id', async (req, res) => {
+  let conn;
+  try {
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: true, msg: 'Id requerido' });
+
+    conn = await db.pool.getConnection();
+    await conn.beginTransaction();
+
+    // obtener imagen para eliminar archivo si existe
+    const sel = await conn.query(`SELECT imagen FROM eventos_especiales WHERE id=${id}`);
+    const row = sel[0][0];
+    // borrar boletos
+    await conn.query(`DELETE FROM eventos_especiales_boletos WHERE evento_id=${id}`);
+    // borrar horarios
+    await conn.query(`DELETE FROM eventos_especiales_horarios WHERE evento_id=${id}`);
+    // borrar evento
+    await conn.query(`DELETE FROM eventos_especiales WHERE id=${id}`);
+
+    await conn.commit();
+
+    // eliminar archivo fisico si aplica (fuera de la transacción)
+    try {
+      if (row && row.imagen) {
+        const filename = path.basename(row.imagen);
+        const p = path.join(__dirname, '../images', filename);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      }
+    } catch (e) {
+      console.log('Error borrando archivo en delete', e);
+    }
+
+    return res.status(200).json({ error: false, msg: 'Evento borrado con exito' });
+
+  } catch (error) {
+    console.log('Error deleting evento, rollback', error);
+    try { if (conn) await conn.rollback(); } catch (r) { console.log('rollback error', r); }
+    return res.status(500).json({ error: true, msg: 'Error borrando evento', details: error && error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
