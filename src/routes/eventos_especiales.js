@@ -66,6 +66,24 @@ app.post('/crear', imageController.upload, async (req, res) => {
       return res.status(400).json({ error: true, msg: 'Titulo y slug son requeridos' });
     }
 
+    // Validar horarios y boletos ANTES de iniciar la transacción
+    for (let i = 0; i < horarios.length; i++) {
+      const h = horarios[i];
+      if (!h.fecha) {
+        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'fecha'` });
+      }
+      if (!h.hora_inicio) {
+        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'hora_inicio'` });
+      }
+    }
+
+    for (let i = 0; i < boletos.length; i++) {
+      const b = boletos[i];
+      if (!b.titulo || b.titulo === '') {
+        return res.status(400).json({ error: true, msg: `El boleto #${i + 1} requiere la propiedad 'titulo'` });
+      }
+    }
+
     let today = new Date();
     let date = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
     let time = today.getHours() + ':' + today.getMinutes() + ':' + today.getSeconds();
@@ -91,21 +109,13 @@ app.post('/crear', imageController.upload, async (req, res) => {
     result = result[0];
     const eventoId = result.insertId;
 
-    // Validar e insertar horarios
+    // Insertar horarios (las validaciones ya se hicieron arriba)
     for (let i = 0; i < horarios.length; i++) {
       const h = horarios[i];
-      let f = h.fecha || null;
-      let hi = h.hora_inicio || null;
+      let f = h.fecha;
+      let hi = h.hora_inicio;
       let hf = h.hora_fin || null;
       let cupo_total = h.cupo_total && h.cupo_total !== '' ? h.cupo_total : null;
-
-      // Validaciones básicas para evitar errores SQL y dar mensajes amigables
-      if (!f) {
-        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'fecha'` });
-      }
-      if (!hi) {
-        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'hora_inicio'` });
-      }
 
       let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
       await conn.query(qH);
@@ -114,14 +124,10 @@ app.post('/crear', imageController.upload, async (req, res) => {
     // Validar e insertar boletos
     for (let i = 0; i < boletos.length; i++) {
       const b = boletos[i];
-      let tituloB = b.titulo || '';
+      let tituloB = b.titulo;
       let descB = b.descripcion || '';
       let precio = b.precio && b.precio !== '' ? b.precio : 0.00;
       let cupo_total = b.cupo_total && b.cupo_total !== '' ? b.cupo_total : null;
-
-      if (!tituloB) {
-        return res.status(400).json({ error: true, msg: `El boleto #${i + 1} requiere la propiedad 'titulo'` });
-      }
 
       let qB = `INSERT INTO eventos_especiales_boletos (evento_id, titulo, descripcion, precio, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${tituloB}', '${descB}', ${precio}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
       await conn.query(qB);
