@@ -8,7 +8,7 @@ const imageController = require('../controller/imageController')
 // Lista todos los eventos
 app.get('/eventos', async (req, res) => {
   try {
-    let query = `SELECT id, titulo, slug, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales ORDER BY orden DESC`;
+    let query = `SELECT id, titulo, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales ORDER BY orden DESC`;
     let eventos = await db.pool.query(query);
     return res.status(200).json(eventos[0]);
   } catch (error) {
@@ -45,7 +45,6 @@ app.post('/crear', imageController.upload, async (req, res) => {
   try {
     const {
       titulo,
-      slug,
       descripcion_corta,
       descripcion_larga,
       fecha_inicio_agenda,
@@ -64,7 +63,7 @@ app.post('/crear', imageController.upload, async (req, res) => {
     } catch (e) { boletos = []; }
 
     // Validaciones mínimas
-    if (!titulo || !slug) {
+    if (!titulo) {
       // eliminar archivo subido si hay uno
       if (req.files && req.files.length > 0) {
         try {
@@ -74,7 +73,7 @@ app.post('/crear', imageController.upload, async (req, res) => {
           })
         } catch (e) { console.log('Error borrando archivo tras validacion', e) }
       }
-      return res.status(400).json({ error: true, msg: 'Titulo y slug son requeridos' });
+      return res.status(400).json({ error: true, msg: 'Titulo es requerido' });
     }
 
     // Validar que exista al menos un horario y un boleto
