@@ -1,6 +1,8 @@
 const express = require('express')
 const app = express.Router()
 const db = require('../config/db')
+const fs = require('fs')
+const path = require('path')
 const imageController = require('../controller/imageController')
 
 // Lista todos los eventos
@@ -63,16 +65,45 @@ app.post('/crear', imageController.upload, async (req, res) => {
 
     // Validaciones mínimas
     if (!titulo || !slug) {
+      // eliminar archivo subido si hay uno
+      if (req.files && req.files.length > 0) {
+        try {
+          req.files.forEach(f => {
+            const p = path.join(__dirname, '../images', f.filename);
+            if (fs.existsSync(p)) fs.unlinkSync(p);
+          })
+        } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+      }
       return res.status(400).json({ error: true, msg: 'Titulo y slug son requeridos' });
     }
 
-    // Validar horarios y boletos ANTES de iniciar la transacción
+    // Validar que exista al menos un horario y un boleto
+    if (!Array.isArray(horarios) || horarios.length === 0) {
+      if (req.files && req.files.length > 0) {
+        try { req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }) } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+      }
+      return res.status(400).json({ error: true, msg: 'Debe especificar al menos un horario' });
+    }
+    if (!Array.isArray(boletos) || boletos.length === 0) {
+      if (req.files && req.files.length > 0) {
+        try { req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }) } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+      }
+      return res.status(400).json({ error: true, msg: 'Debe especificar al menos un boleto' });
+    }
+
+    // Validar contenidos de horarios y boletos ANTES de iniciar la transacción
     for (let i = 0; i < horarios.length; i++) {
       const h = horarios[i];
       if (!h.fecha) {
+        if (req.files && req.files.length > 0) {
+          try { req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }) } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+        }
         return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'fecha'` });
       }
       if (!h.hora_inicio) {
+        if (req.files && req.files.length > 0) {
+          try { req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }) } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+        }
         return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'hora_inicio'` });
       }
     }
@@ -80,6 +111,9 @@ app.post('/crear', imageController.upload, async (req, res) => {
     for (let i = 0; i < boletos.length; i++) {
       const b = boletos[i];
       if (!b.titulo || b.titulo === '') {
+        if (req.files && req.files.length > 0) {
+          try { req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }) } catch (e) { console.log('Error borrando archivo tras validacion', e) }
+        }
         return res.status(400).json({ error: true, msg: `El boleto #${i + 1} requiere la propiedad 'titulo'` });
       }
     }
