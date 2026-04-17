@@ -234,3 +234,110 @@ app.delete('/delete/:id', async (req, res) => {
   }
 });
 
+// Actualizar evento (acepta imagen en campo 'image' y horarios/boletos como JSON)
+app.put('/set', imageController.upload, async (req, res) => {
+  let conn;
+  try {
+    const {
+      id,
+      titulo,
+      descripcion_corta,
+      descripcion_larga,
+      fecha_inicio_agenda,
+      fecha_fin_agenda,
+      activo,
+      destacado
+    } = req.body;
+
+    if (!id) return res.status(400).json({ error: true, msg: 'Id es requerido' });
+
+    let horarios = [];
+    let boletos = [];
+    try { if (req.body.horarios) horarios = JSON.parse(req.body.horarios); } catch (e) { horarios = []; }
+    try { if (req.body.boletos) boletos = JSON.parse(req.body.boletos); } catch (e) { boletos = []; }
+
+    // Validar contenidos si vienen
+    for (let i = 0; i < horarios.length; i++) {
+      const h = horarios[i];
+      if (!h.fecha) return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'fecha'` });
+      if (!h.hora_inicio) return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'hora_inicio'` });
+    }
+    for (let i = 0; i < boletos.length; i++) {
+      const b = boletos[i];
+      if (!b.titulo || b.titulo === '') return res.status(400).json({ error: true, msg: `El boleto #${i + 1} requiere la propiedad 'titulo'` });
+    }
+
+    let today = new Date();
+    let date = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
+    let time = today.getHours() + ':' + today.getMinutes() + ':' + today.getSeconds();
+    let fecha = date + ' ' + time;
+
+    conn = await db.pool.getConnection();
+    await conn.beginTransaction();
+
+    // obtener imagen antigua
+    const sel = await conn.query(`SELECT imagen FROM eventos_especiales WHERE id=${id}`);
+    const oldRow = sel[0][0];
+
+    let imagenUrl = null;
+    if (req.files && req.files.length > 0) {
+      let filename = req.files[0].filename;
+      imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
+    }
+
+    // actualizar tabla eventos_especiales
+    let qUp = `UPDATE eventos_especiales SET titulo='${titulo || ''}', descripcion_corta='${descripcion_corta || ''}', descripcion_larga='${descripcion_larga || ''}', fecha_inicio_agenda=${fecha_inicio_agenda ? "'"+fecha_inicio_agenda+"'" : 'NULL'}, fecha_fin_agenda=${fecha_fin_agenda ? "'"+fecha_fin_agenda+"'" : 'NULL'}, activo=${activo ? activo : 1}, destacado=${destacado ? destacado : 0}, updated_at='${fecha}'`;
+    if (imagenUrl) qUp += `, imagen='${imagenUrl}'`;
+    qUp += ` WHERE id=${id}`;
+
+    await conn.query(qUp);
+
+    // si se enviaron horarios/boletos, reemplazarlos
+    if (Array.isArray(horarios) && horarios.length > 0) {
+      await conn.query(`DELETE FROM eventos_especiales_horarios WHERE evento_id=${id}`);
+      for (let i = 0; i < horarios.length; i++) {
+        const h = horarios[i];
+        let f = h.fecha;
+        let hi = h.hora_inicio;
+        let hf = h.hora_fin || null;
+        let cupo_total = h.cupo_total && h.cupo_total !== '' ? h.cupo_total : null;
+        let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${id}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+        await conn.query(qH);
+      }
+    }
+
+    if (Array.isArray(boletos) && boletos.length > 0) {
+      await conn.query(`DELETE FROM eventos_especiales_boletos WHERE evento_id=${id}`);
+      for (let i = 0; i < boletos.length; i++) {
+        const b = boletos[i];
+        let tituloB = b.titulo;
+        let descB = b.descripcion || '';
+        let precio = b.precio && b.precio !== '' ? b.precio : 0.00;
+        let cupo_total = b.cupo_total && b.cupo_total !== '' ? b.cupo_total : null;
+        let qB = `INSERT INTO eventos_especiales_boletos (evento_id, titulo, descripcion, precio, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${id}, '${tituloB}', '${descB}', ${precio}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+        await conn.query(qB);
+      }
+    }
+
+    await conn.commit();
+
+    // eliminar archivo antiguo si se subió uno nuevo
+    try {
+      if (imagenUrl && oldRow && oldRow.imagen) {
+        const filename = path.basename(oldRow.imagen);
+        const p = path.join(__dirname, '../images', filename);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      }
+    } catch (e) { console.log('Error borrando archivo antiguo en set', e); }
+
+    return res.status(200).json({ error: false, msg: 'Evento actualizado con exito' });
+
+  } catch (error) {
+    console.log('Error updating evento, rollback', error);
+    try { if (conn) await conn.rollback(); } catch (r) { console.log('rollback error', r); }
+    return res.status(500).json({ error: true, msg: 'Error actualizando evento', details: error && error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
