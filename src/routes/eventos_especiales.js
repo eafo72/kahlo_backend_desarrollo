@@ -39,6 +39,7 @@ app.get('/obtener/:id', async (req, res) => {
 
 // Crear evento especial (acepta imagen en campo 'image' y campos horarios/boletos como JSON string)
 app.post('/crear', imageController.upload, async (req, res) => {
+  let conn;
   try {
     const {
       titulo,
@@ -77,42 +78,71 @@ app.post('/crear', imageController.upload, async (req, res) => {
       imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
     }
 
+    // Iniciar transacción
+    conn = await db.pool.getConnection();
+    await conn.beginTransaction();
+
     let qInsert = `INSERT INTO eventos_especiales
       (titulo, slug, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at)
       VALUES
       ('${titulo}', '${slug}', '${descripcion_corta || ''}', '${descripcion_larga || ''}', ${imagenUrl ? "'"+imagenUrl+"'" : 'NULL'}, ${fecha_inicio_agenda ? "'"+fecha_inicio_agenda+"'" : 'NULL'}, ${fecha_fin_agenda ? "'"+fecha_fin_agenda+"'" : 'NULL'}, ${activo ? activo : 1}, ${destacado ? destacado : 0}, 0, '${fecha}', '${fecha}')`;
 
-    let result = await db.pool.query(qInsert);
+    let result = await conn.query(qInsert);
     result = result[0];
     const eventoId = result.insertId;
 
-    // Insertar horarios
-    for (let h of horarios) {
+    // Validar e insertar horarios
+    for (let i = 0; i < horarios.length; i++) {
+      const h = horarios[i];
       let f = h.fecha || null;
       let hi = h.hora_inicio || null;
       let hf = h.hora_fin || null;
       let cupo_total = h.cupo_total && h.cupo_total !== '' ? h.cupo_total : null;
 
-      let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, ${f ? "'"+f+"'" : 'NULL'}, ${hi ? "'"+hi+"'" : 'NULL'}, ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
-      await db.pool.query(qH);
+      // Validaciones básicas para evitar errores SQL y dar mensajes amigables
+      if (!f) {
+        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'fecha'` });
+      }
+      if (!hi) {
+        return res.status(400).json({ error: true, msg: `El horario #${i + 1} requiere la propiedad 'hora_inicio'` });
+      }
+
+      let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+      await conn.query(qH);
     }
 
-    // Insertar boletos
-    for (let b of boletos) {
+    // Validar e insertar boletos
+    for (let i = 0; i < boletos.length; i++) {
+      const b = boletos[i];
       let tituloB = b.titulo || '';
       let descB = b.descripcion || '';
       let precio = b.precio && b.precio !== '' ? b.precio : 0.00;
       let cupo_total = b.cupo_total && b.cupo_total !== '' ? b.cupo_total : null;
 
-      let qB = `INSERT INTO eventos_especiales_boletos (evento_id, titulo, descripcion, precio, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${tituloB}', '${descB}', ${precio}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
-      await db.pool.query(qB);
-    }
+      if (!tituloB) {
+        return res.status(400).json({ error: true, msg: `El boleto #${i + 1} requiere la propiedad 'titulo'` });
+      }
 
+      let qB = `INSERT INTO eventos_especiales_boletos (evento_id, titulo, descripcion, precio, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${tituloB}', '${descB}', ${precio}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+      await conn.query(qB);
+    }
+    // Si todo salió bien commit
+    await conn.commit();
     return res.status(200).json({ error: false, msg: 'Evento creado con exito', id: eventoId });
 
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: true, details: error });
+    console.log('Error crear evento, realizando rollback', error);
+    // rollback si hay conexión
+    try {
+      if (conn) await conn.rollback();
+    } catch (rerr) {
+      console.log('Error en rollback', rerr);
+    }
+
+    const message = error && error.message ? error.message : 'Error interno del servidor';
+    return res.status(500).json({ error: true, msg: 'Error al crear el evento', details: message });
+  } finally {
+    if (conn) conn.release();
   }
 })
 
