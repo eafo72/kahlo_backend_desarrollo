@@ -129,8 +129,8 @@ app.post('/crear', imageController.upload, async (req, res) => {
       imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
     }
 
-    // Si no se envía slug, generarlo desde el título
-    let computedSlug = slug && slug.trim() !== '' ? slug : titulo.toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    // Generar slug desde el título
+    let computedSlug = titulo.toString().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 
     // Iniciar transacción
     conn = await db.pool.getConnection();
