@@ -7594,4 +7594,59 @@ function limpiarPago(id) {
     }, 10 * 60 * 1000); // 10 minutos
 }
 
+// Crear sesión de Stripe para eventos especiales (solo total global)
+app.post('/stripe/create-evento-especial-session', async (req, res) => {
+    try {
+        const { total, customerEmail, successUrl, cancelUrl, metadata } = req.body;
+
+        // Validar que el total sea válido
+        if (!total || total <= 0) {
+            return res.status(400).json({
+                error: true,
+                msg: 'El total debe ser mayor a 0'
+            });
+        }
+
+        // Convertir el total a centavos
+        const amountInCents = Math.round(total * 100);
+
+        // Crear line item genérico para el evento especial
+        const lineItems = [
+            {
+                price_data: {
+                    currency: 'mxn',
+                    product_data: {
+                        name: 'Evento Especial',
+                        description: metadata?.descripcion || 'Pago de evento especial',
+                    },
+                    unit_amount: amountInCents,
+                },
+                quantity: 1,
+            }
+        ];
+
+        // Crea la sesión de Stripe
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: lineItems,
+            mode: 'payment',
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+            customer_email: customerEmail,
+            metadata: {
+                ...metadata,
+                evento_especial: 'true',
+                total: total.toString()
+            },
+            expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // expira en 30 minutos
+            billing_address_collection: 'auto',
+        });
+
+        res.json({ sessionId: session.id, url: session.url, error: false });
+    } catch (error) {
+        console.error('Error creando sesión de Stripe para evento especial:', error);
+        res.status(400).json({ error: true, msg: error.message });
+    }
+});
+
 module.exports = app
