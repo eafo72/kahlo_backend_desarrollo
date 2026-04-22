@@ -4,6 +4,8 @@ const db = require('../config/db')
 const fs = require('fs')
 const path = require('path')
 const imageController = require('../controller/imageController')
+let FormData = require('form-data');
+const fetch = require('node-fetch');
 
 // Lista todos los eventos
 app.get('/eventos', async (req, res) => {
@@ -122,11 +124,39 @@ app.post('/crear', imageController.upload, async (req, res) => {
     let time = today.getHours() + ':' + today.getMinutes() + ':' + today.getSeconds();
     let fecha = date + ' ' + time;
 
-    // imagen URL (si se subió archivo, se usa nombre y se forma URL basado en URLFRONT)
+    // imagen URL (si se subió archivo, subirla al frontend via base64 como en foto.js)
     let imagenUrl = null;
     if (req.files && req.files.length > 0) {
-      let filename = req.files[0].filename;
-      imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
+      try {
+        let tituloImage = `${date}-${req.files[0].originalname}`;
+        let thumb = `${process.env.URLFRONT}/images/eventos/${tituloImage}`;
+
+        let file = fs.readFileSync(req.files[0].path, { encoding: 'base64' });
+        let formdata = new FormData();
+        formdata.append('thumb', file);
+        formdata.append('nombre_thumb', tituloImage);
+
+        // endpoint en el frontend que recibe base64 y guarda la imagen
+        let response = await fetch(`${process.env.URLFRONT}/images/eventos/api_eventos_base64.php`, {
+          method: 'POST',
+          body: formdata
+        });
+
+        let result = await response.json();
+        // algunos endpoints devuelven un array de resultados
+        if (Array.isArray(result)) {
+          result.forEach(element => { if (element.error) throw new Error(element.msg || 'Error subiendo imagen'); });
+        } else if (result && result.error) {
+          throw new Error(result.msg || 'Error subiendo imagen');
+        }
+
+        imagenUrl = thumb;
+      } catch (e) {
+        console.log('Error subiendo imagen a URLFRONT', e);
+        // eliminar archivos locales subidos por multer
+        try { if (req.files && req.files.length > 0) req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }); } catch (ee) { console.log('Error borrando archivo local tras fallo subida', ee); }
+        return res.status(400).json({ error: true, msg: 'No se pudo subir la imagen', details: e.message });
+      }
     }
 
     // Generar slug desde el título
@@ -281,8 +311,33 @@ app.put('/set', imageController.upload, async (req, res) => {
 
     let imagenUrl = null;
     if (req.files && req.files.length > 0) {
-      let filename = req.files[0].filename;
-      imagenUrl = `${process.env.URLFRONT}/images/${filename}`;
+      try {
+        let tituloImage = `${date}-${req.files[0].originalname}`;
+        let thumb = `${process.env.URLFRONT}/images/eventos/${tituloImage}`;
+
+        let file = fs.readFileSync(req.files[0].path, { encoding: 'base64' });
+        let formdata = new FormData();
+        formdata.append('thumb', file);
+        formdata.append('nombre_thumb', tituloImage);
+
+        let response = await fetch(`${process.env.URLFRONT}/images/eventos/api_eventos_base64.php`, {
+          method: 'POST',
+          body: formdata
+        });
+
+        let result = await response.json();
+        if (Array.isArray(result)) {
+          if (result.some(el => el.error)) throw new Error(result.find(el => el.error).msg || 'Error subiendo imagen');
+        } else if (result && result.error) {
+          throw new Error(result.msg || 'Error subiendo imagen');
+        }
+
+        imagenUrl = thumb;
+      } catch (e) {
+        console.log('Error subiendo imagen a URLFRONT en set', e);
+        try { if (req.files && req.files.length > 0) req.files.forEach(f => { const p = path.join(__dirname, '../images', f.filename); if (fs.existsSync(p)) fs.unlinkSync(p); }); } catch (ee) { console.log('Error borrando archivo local tras fallo subida', ee); }
+        return res.status(400).json({ error: true, msg: 'No se pudo subir la imagen', details: e.message });
+      }
     }
 
     // actualizar tabla eventos_especiales
