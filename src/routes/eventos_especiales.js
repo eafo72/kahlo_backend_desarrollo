@@ -22,6 +22,11 @@ app.get('/eventos', async (req, res) => {
     let horariosRes = await db.pool.query(qHorarios);
     const horarios = horariosRes[0] || [];
 
+    // Obtener todos los boletos de los eventos en una sola consulta
+    let qBoletos = `SELECT * FROM eventos_especiales_boletos WHERE evento_id IN (${ids}) ORDER BY evento_id, orden`;
+    let boletosRes = await db.pool.query(qBoletos);
+    const boletos = boletosRes[0] || [];
+
     // Mapear horarios por evento_id
     const horariosMap = {};
     horarios.forEach(h => {
@@ -29,8 +34,15 @@ app.get('/eventos', async (req, res) => {
       horariosMap[h.evento_id].push(h);
     });
 
-    // Adjuntar horarios a cada evento
-    const enriched = eventos.map(ev => ({ ...ev, horarios: horariosMap[ev.id] || [] }));
+    // Mapear boletos por evento_id
+    const boletosMap = {};
+    boletos.forEach(b => {
+      if (!boletosMap[b.evento_id]) boletosMap[b.evento_id] = [];
+      boletosMap[b.evento_id].push(b);
+    });
+
+    // Adjuntar horarios y boletos a cada evento
+    const enriched = eventos.map(ev => ({ ...ev, horarios: horariosMap[ev.id] || [], boletos: boletosMap[ev.id] || [] }));
 
     return res.status(200).json(enriched);
   } catch (error) {
