@@ -7595,7 +7595,7 @@ function limpiarPago(id) {
 }
 
 // Crear sesión de Stripe para eventos especiales (solo total global)
-app.post('/stripe/create-evento-especial-session', async (req, res) => {
+app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => {
     try {
         const { total, customerEmail, successUrl, cancelUrl, metadata } = req.body;
 
