@@ -11,8 +11,28 @@ const fetch = require('node-fetch');
 app.get('/eventos', async (req, res) => {
   try {
     let query = `SELECT id, titulo, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales ORDER BY orden DESC`;
-    let eventos = await db.pool.query(query);
-    return res.status(200).json(eventos[0]);
+    let eventosRes = await db.pool.query(query);
+    const eventos = eventosRes[0] || [];
+
+    if (eventos.length === 0) return res.status(200).json([]);
+
+    // Obtener todos los horarios de los eventos en una sola consulta
+    const ids = eventos.map(e => e.id).join(',') || '0';
+    let qHorarios = `SELECT * FROM eventos_especiales_horarios WHERE evento_id IN (${ids}) ORDER BY fecha, hora_inicio`;
+    let horariosRes = await db.pool.query(qHorarios);
+    const horarios = horariosRes[0] || [];
+
+    // Mapear horarios por evento_id
+    const horariosMap = {};
+    horarios.forEach(h => {
+      if (!horariosMap[h.evento_id]) horariosMap[h.evento_id] = [];
+      horariosMap[h.evento_id].push(h);
+    });
+
+    // Adjuntar horarios a cada evento
+    const enriched = eventos.map(ev => ({ ...ev, horarios: horariosMap[ev.id] || [] }));
+
+    return res.status(200).json(enriched);
   } catch (error) {
     return res.status(500).json({ msg: 'Hubo un error obteniendo los eventos', error: true, details: error })
   }
