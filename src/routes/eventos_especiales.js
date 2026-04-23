@@ -215,7 +215,7 @@ app.post('/crear', imageController.upload, async (req, res) => {
       let hf = h.hora_fin || null;
       let cupo_total = h.cupo_total && h.cupo_total !== '' ? h.cupo_total : null;
 
-      let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+      let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, activo, orden, created_at, updated_at) VALUES (${eventoId}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
       await conn.query(qH);
     }
 
@@ -388,7 +388,8 @@ app.put('/set', imageController.upload, async (req, res) => {
         let hi = h.hora_inicio;
         let hf = h.hora_fin || null;
         let cupo_total = h.cupo_total && h.cupo_total !== '' ? h.cupo_total : null;
-        let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo, orden, created_at, updated_at) VALUES (${id}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
+        // No insertar cupo_disponible aquí; dejamos que viajeTour sea la fuente de disponibilidad
+        let qH = `INSERT INTO eventos_especiales_horarios (evento_id, fecha, hora_inicio, hora_fin, cupo_total, activo, orden, created_at, updated_at) VALUES (${id}, '${f}', '${hi}', ${hf ? "'"+hf+"'" : 'NULL'}, ${cupo_total !== null ? cupo_total : 'NULL'}, 1, 0, '${fecha}', '${fecha}')`;
         await conn.query(qH);
       }
     }
