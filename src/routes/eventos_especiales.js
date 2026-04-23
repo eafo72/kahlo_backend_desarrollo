@@ -52,7 +52,7 @@ app.get('/eventos', async (req, res) => {
 })
 
 //Lista de todos los eventos activos (activo=1) con sus horarios y boletos
-app.get('/eventos', async (req, res) => {
+app.get('/eventos/activos', async (req, res) => {
   try {
     let query = `SELECT id, titulo, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales WHERE activo=1 ORDER BY orden DESC`;
     let eventosRes = await db.pool.query(query);
@@ -294,7 +294,7 @@ app.post('/crear', imageController.upload, async (req, res) => {
   }
 })
 
-module.exports = app
+
 
 // Eliminar evento (horarios y boletos) por id
 app.delete('/delete/:id', async (req, res) => {
@@ -473,3 +473,4 @@ app.put('/set', imageController.upload, async (req, res) => {
   }
 });
 
+module.exports = app
