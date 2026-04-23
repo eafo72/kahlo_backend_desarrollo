@@ -7596,56 +7596,156 @@ function limpiarPago(id) {
 
 // Crear sesión de Stripe para eventos especiales (solo total global)
 app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => {
-    try {
-        const { total, customerEmail, successUrl, cancelUrl, metadata } = req.body;
+    // Este endpoint valida disponibilidad y aparta boletos antes de crear la sesión de Stripe.
+    const { total, customerEmail, successUrl, cancelUrl, metadata } = req.body;
 
-        // Validar que el total sea válido
-        if (!total || total <= 0) {
-            return res.status(400).json({
-                error: true,
-                msg: 'El total debe ser mayor a 0'
-            });
+    if (!total || total <= 0) {
+        return res.status(400).json({ error: true, msg: 'El total debe ser mayor a 0' });
+    }
+
+    const amountInCents = Math.round(total * 100);
+    const no_boletos = Number(metadata?.no_boletos) || 1;
+    const eventoId = metadata?.eventoId || metadata?.evento_id || null;
+    const fecha = metadata?.fecha; // expected 'YYYY-MM-DD'
+    const horaRaw = metadata?.hora; // expected 'HH:mm' or 'HH:mm:ss'
+
+    if (!eventoId || !fecha || !horaRaw) {
+        return res.status(400).json({ error: true, msg: 'Faltan parámetros de evento (eventoId, fecha, hora, no_boletos)' });
+    }
+
+    const hora = normalizarHora(horaRaw);
+
+    let connection;
+
+    try {
+        connection = await db.pool.getConnection();
+
+        // Iniciamos transacción para bloquear cupo
+        await connection.beginTransaction();
+
+        // Buscar horario del evento y bloquear fila (hora_inicio debe coincidir exactamente)
+        const selectQuery = `SELECT id, evento_id, fecha, hora_inicio, cupo_total, cupo_disponible FROM eventos_especiales_horarios WHERE evento_id = ? AND fecha = ? AND activo = 1 AND hora_inicio = ? LIMIT 1 FOR UPDATE`;
+        const [rows] = await connection.query(selectQuery, [eventoId, fecha, hora]);
+        const horario = rows[0];
+
+        if (!horario) {
+            await connection.rollback();
+            connection.release();
+            return res.status(404).json({ error: true, msg: 'Horario no encontrado para ese evento/fecha/hora' });
         }
 
-        // Convertir el total a centavos
-        const amountInCents = Math.round(total * 100);
+        const cupoDisponible = Number(horario.cupo_disponible || 0);
+        if (cupoDisponible < no_boletos) {
+            await connection.rollback();
+            connection.release();
+            return res.status(200).json({ error: true, msg: 'Cupo no disponible' });
+        }
 
-        // Crear line item genérico para el evento especial
+        // Formatear fecha/hora para campos created_at/updated_at
+        let now = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City', hour12: false });
+        let [datePart, timePart] = now.split(', ');
+        let [day, month, year] = datePart.split('/');
+        let [hours, minutes, seconds] = timePart.split(':');
+        month = month.padStart(2, '0');
+        day = day.padStart(2, '0');
+        hours = hours.padStart(2, '0');
+        minutes = minutes.padStart(2, '0');
+        seconds = seconds.padStart(2, '0');
+        const fechaNow = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+
+        // 1) Insertar venta (preventa) con pagado=0 y total=0 para reservar
+        const tipos_boletos = metadata?.tipos_boletos ? metadata.tipos_boletos : JSON.stringify({ tipoA: no_boletos });
+        const nombre_cliente = metadata?.nombre_cliente || metadata?.nombre || '';
+        const correo = metadata?.correo || customerEmail || '';
+        const fecha_evento_hora = `${fecha} ${hora}`;
+
+        const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, NULL)`;
+        const [ins] = await connection.query(insertQuery, ['E', no_boletos, tipos_boletos, fechaNow, fecha_evento_hora, fechaNow, fechaNow, nombre_cliente, correo]);
+        const ventaId = ins.insertId;
+
+        // Generar id_reservacion similar al flujo normal: <insertId>E<nombre><apellido>
+        let id_reservacion = `E${ventaId}`;
+        if (metadata?.cliente_id) {
+            const [clientRows] = await connection.query('SELECT nombres, apellidos FROM usuario WHERE id = ? LIMIT 1', [metadata.cliente_id]);
+            if (clientRows && clientRows[0]) {
+                const c = clientRows[0];
+                id_reservacion = `${ventaId}E${helperName((c.nombres||'').split(' '))}${helperName((c.apellidos||'').split(' '))}`;
+            }
+        }
+
+        await connection.query('UPDATE venta SET id_reservacion = ? WHERE id = ?', [id_reservacion, ventaId]);
+
+        // 2) Reducir cupo disponible en el horario
+        const newCupo = Math.max(0, cupoDisponible - no_boletos);
+        await connection.query('UPDATE eventos_especiales_horarios SET cupo_disponible = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, horario.id]);
+
+        // Commit para confirmar la reserva temporal
+        await connection.commit();
+        connection.release();
+
+        // 3) Crear la sesión de Stripe
         const lineItems = [
             {
                 price_data: {
                     currency: 'mxn',
                     product_data: {
-                        name: 'Evento Especial',
-                        description: metadata?.descripcion || 'Pago de evento especial',
+                        name: metadata?.descripcion || 'Evento Especial',
+                        description: metadata?.descripcion || 'Pago de evento especial'
                     },
-                    unit_amount: amountInCents,
+                    unit_amount: amountInCents
                 },
-                quantity: 1,
+                quantity: 1
             }
         ];
 
-        // Crea la sesión de Stripe
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            line_items: lineItems,
-            mode: 'payment',
-            success_url: successUrl,
-            cancel_url: cancelUrl,
-            customer_email: customerEmail,
-            metadata: {
-                ...metadata,
-                evento_especial: 'true',
-                total: total.toString()
-            },
-            expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // expira en 30 minutos
-            billing_address_collection: 'auto',
-        });
+        let session;
+        try {
+            session = await stripe.checkout.sessions.create({
+                payment_method_types: ['card'],
+                line_items: lineItems,
+                mode: 'payment',
+                success_url: successUrl,
+                cancel_url: `${cancelUrl}?session_id={CHECKOUT_SESSION_ID}`,
+                customer_email: customerEmail,
+                metadata: { ...metadata, evento_especial: 'true', total: total.toString(), ventaId: String(ventaId) },
+                expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+                billing_address_collection: 'auto'
+            });
+        } catch (stripeError) {
+            // Si falla Stripe, intentar restaurar cupo y marcar venta como devuelta
+            try {
+                const revertConn = await db.pool.getConnection();
+                await revertConn.beginTransaction();
+                await revertConn.query('UPDATE eventos_especiales_horarios SET cupo_disponible = cupo_disponible + ? WHERE id = ?', [no_boletos, horario.id]);
+                await revertConn.query(`UPDATE venta SET boletos_devueltos = 1, status_traspaso = 99, updated_at = ? WHERE id = ?`, [fechaNow, ventaId]);
+                await revertConn.commit();
+                revertConn.release();
+            } catch (revertErr) {
+                console.error('Error revirtiendo reserva tras fallo Stripe:', revertErr);
+            }
 
-        res.json({ sessionId: session.id, url: session.url, error: false });
+            console.error('Error creando sesión de Stripe para evento especial:', stripeError);
+            return res.status(400).json({ error: true, msg: stripeError.message || 'Error al crear sesión Stripe' });
+        }
+
+        // 4) Actualizar venta con session_id e id_reservacion
+        try {
+            const conn2 = await db.pool.getConnection();
+            await conn2.query('UPDATE venta SET session_id = ? WHERE id = ?', [session.id, ventaId]);
+            conn2.release();
+        } catch (updErr) {
+            console.error('Error actualizando venta con session_id:', updErr);
+        }
+
+        return res.json({ sessionId: session.id, url: session.url, error: false });
+
     } catch (error) {
+        if (connection) {
+            try { await connection.rollback(); } catch(e){}
+            try { connection.release(); } catch(e){}
+        }
         console.error('Error creando sesión de Stripe para evento especial:', error);
-        res.status(400).json({ error: true, msg: error.message });
+        return res.status(500).json({ error: true, msg: error.message || 'Error interno' });
     }
 });
 
