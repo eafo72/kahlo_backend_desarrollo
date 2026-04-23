@@ -7609,6 +7609,13 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
     const fecha = metadata?.fecha; // expected 'YYYY-MM-DD'
     const horaRaw = metadata?.hora; // expected 'HH:mm' or 'HH:mm:ss'
 
+    // Validar que venga cliente_id (no debe ser null/0/indefinido)
+    const clienteIdRaw = metadata?.cliente_id ?? metadata?.clienteId ?? null;
+    const clienteId = clienteIdRaw != null ? Number(clienteIdRaw) : null;
+    if (!clienteId || isNaN(clienteId) || clienteId <= 0) {
+        return res.status(400).json({ error: true, msg: 'Falta parámetro obligatorio: cliente_id' });
+    }
+
     if (!eventoId || !fecha || !horaRaw) {
         return res.status(400).json({ error: true, msg: 'Faltan parámetros de evento (eventoId, fecha, hora, no_boletos)' });
     }
@@ -7659,8 +7666,9 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
         const correo = metadata?.correo || customerEmail || '';
         const fecha_evento_hora = `${fecha} ${hora}`;
 
-        const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, ?)`;
-        const [ins] = await connection.query(insertQuery, ['E', no_boletos, tipos_boletos, fechaNow, fecha_evento_hora, fechaNow, fechaNow, nombre_cliente, correo, horario.id]);
+        const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, cliente_id, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, ?, ?)`;
+        const clienteIdParam = Number(metadata.cliente_id);
+        const [ins] = await connection.query(insertQuery, ['E', no_boletos, tipos_boletos, fechaNow, fecha_evento_hora, fechaNow, fechaNow, nombre_cliente, correo, clienteIdParam, horario.id]);
         const ventaId = ins.insertId;
 
         // Generar id_reservacion similar al flujo normal: <insertId>E<nombre><apellido>
