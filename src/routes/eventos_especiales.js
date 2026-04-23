@@ -6,7 +6,6 @@ const path = require('path')
 const imageController = require('../controller/imageController')
 let FormData = require('form-data');
 const fetch = require('node-fetch');
-const { act } = require('react')
 
 // Lista todos los eventos
 app.get('/eventos', async (req, res) => {
