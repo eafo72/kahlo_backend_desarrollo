@@ -129,7 +129,8 @@ app.use((req, res, next) => {
 
 const allowedOrigins = [
   'https://agencianuba.com',
-  'http://localhost:4000'
+  'http://localhost:4000',
+  'https://museodesarrollo.info'
 ];
 
 app.use((req, res, next) => {
