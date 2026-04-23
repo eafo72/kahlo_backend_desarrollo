@@ -7659,8 +7659,8 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
         const correo = metadata?.correo || customerEmail || '';
         const fecha_evento_hora = `${fecha} ${hora}`;
 
-        const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, NULL)`;
-        const [ins] = await connection.query(insertQuery, ['E', no_boletos, tipos_boletos, fechaNow, fecha_evento_hora, fechaNow, fechaNow, nombre_cliente, correo]);
+        const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, ?)`;
+        const [ins] = await connection.query(insertQuery, ['E', no_boletos, tipos_boletos, fechaNow, fecha_evento_hora, fechaNow, fechaNow, nombre_cliente, correo, horario.id]);
         const ventaId = ins.insertId;
 
         // Generar id_reservacion similar al flujo normal: <insertId>E<nombre><apellido>
