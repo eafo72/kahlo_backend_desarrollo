@@ -6,11 +6,55 @@ const path = require('path')
 const imageController = require('../controller/imageController')
 let FormData = require('form-data');
 const fetch = require('node-fetch');
+const { act } = require('react')
 
 // Lista todos los eventos
 app.get('/eventos', async (req, res) => {
   try {
     let query = `SELECT id, titulo, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales ORDER BY orden DESC`;
+    let eventosRes = await db.pool.query(query);
+    const eventos = eventosRes[0] || [];
+
+    if (eventos.length === 0) return res.status(200).json([]);
+
+    // Obtener todos los horarios de los eventos en una sola consulta
+    const ids = eventos.map(e => e.id).join(',') || '0';
+    let qHorarios = `SELECT * FROM eventos_especiales_horarios WHERE evento_id IN (${ids}) ORDER BY fecha, hora_inicio`;
+    let horariosRes = await db.pool.query(qHorarios);
+    const horarios = horariosRes[0] || [];
+
+    // Obtener todos los boletos de los eventos en una sola consulta
+    let qBoletos = `SELECT * FROM eventos_especiales_boletos WHERE evento_id IN (${ids}) ORDER BY evento_id, orden`;
+    let boletosRes = await db.pool.query(qBoletos);
+    const boletos = boletosRes[0] || [];
+
+    // Mapear horarios por evento_id
+    const horariosMap = {};
+    horarios.forEach(h => {
+      if (!horariosMap[h.evento_id]) horariosMap[h.evento_id] = [];
+      horariosMap[h.evento_id].push(h);
+    });
+
+    // Mapear boletos por evento_id
+    const boletosMap = {};
+    boletos.forEach(b => {
+      if (!boletosMap[b.evento_id]) boletosMap[b.evento_id] = [];
+      boletosMap[b.evento_id].push(b);
+    });
+
+    // Adjuntar horarios y boletos a cada evento
+    const enriched = eventos.map(ev => ({ ...ev, horarios: horariosMap[ev.id] || [], boletos: boletosMap[ev.id] || [] }));
+
+    return res.status(200).json(enriched);
+  } catch (error) {
+    return res.status(500).json({ msg: 'Hubo un error obteniendo los eventos', error: true, details: error })
+  }
+})
+
+//Lista de todos los eventos activos (activo=1) con sus horarios y boletos
+app.get('/eventos', async (req, res) => {
+  try {
+    let query = `SELECT id, titulo, descripcion_corta, descripcion_larga, imagen, fecha_inicio_agenda, fecha_fin_agenda, activo, destacado, orden, created_at, updated_at FROM eventos_especiales WHERE activo=1 ORDER BY orden DESC`;
     let eventosRes = await db.pool.query(query);
     const eventos = eventosRes[0] || [];
 
