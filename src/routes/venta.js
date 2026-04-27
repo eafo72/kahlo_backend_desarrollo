@@ -1335,56 +1335,6 @@ app.get('/disponibilidad/:tourid/fecha/:fecha/:hora', async (req, res) => {
     }
 })
 
-//la feha esta definida por AAAA-MM-DD
-
-// Disponibilidad evento especial (consulta por eventoId + fecha + hora)
-/*
-app.get('/evento-especial/disponibilidad/:eventoId/fecha/:fecha/:hora', async (req, res) => {
-    try {
-        const eventoId = req.params.eventoId;
-        const fecha = req.params.fecha; // YYYY-MM-DD
-        const horaRaw = req.params.hora; // puede venir 'HH:mm' o 'HH:mm:ss'
-
-        if (!eventoId || !fecha || !horaRaw) {
-            return res.status(400).json({ error: true, msg: 'Parámetros inválidos' });
-        }
-
-        // Normalizar la hora a HH:MM:SS usando la función existente
-        const hora = normalizarHora(horaRaw);
-
-        // Buscar un horario activo que cubra la hora (hora_inicio <= hora <= hora_fin) o sin hora_fin
-        const query = `SELECT id, evento_id, fecha, hora_inicio, hora_fin, cupo_total, cupo_disponible, activo FROM eventos_especiales_horarios WHERE evento_id = ? AND fecha = ? AND activo = 1 AND hora_inicio <= ? AND (hora_fin IS NULL OR hora_fin >= ?) LIMIT 1`;
-        const result = await db.pool.query(query, [eventoId, fecha, hora, hora]);
-        const rows = result[0];
-
-        if (!rows || rows.length === 0) {
-            return res.status(404).json({ error: true, msg: 'Horario no encontrado para ese evento/fecha/hora' });
-        }
-
-        const horario = rows[0];
-        const cupoDisponible = Number(horario.cupo_disponible || 0);
-        const disponible = cupoDisponible >= 1;
-
-        return res.status(200).json({
-            error: false,
-            disponible,
-            cupo_disponible: cupoDisponible,
-            horario: {
-                id: horario.id,
-                fecha: horario.fecha,
-                hora_inicio: horario.hora_inicio,
-                hora_fin: horario.hora_fin,
-                cupo_total: horario.cupo_total
-            }
-        });
-
-    } catch (error) {
-        console.error('Error verificando disponibilidad evento especial:', error);
-        return res.status(500).json({ error: true, msg: error.message || 'Error verificando disponibilidad de evento especial' });
-    }
-});
-*/
-
 app.get('/horarios/:tourid/fecha/:fecha/boletos/:boletos', async (req, res) => {
     try {
         let fecha = req.params.fecha;
