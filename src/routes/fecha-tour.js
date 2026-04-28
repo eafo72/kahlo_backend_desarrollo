@@ -44,6 +44,15 @@ app.post('/crear', async (req, res) => {
         let status = req.body.status;
         let apply_for_operator = req.body.apply_for_operator;
 
+        // Normalizar hora_salida a hh:mm
+        let hora_salida_normalizada = hora_salida;
+        if (typeof hora_salida === 'string') {
+            const partes = hora_salida.split(':');
+            if (partes.length >= 2) {
+                hora_salida_normalizada = partes[0].padStart(2, '0') + ':' + partes[1].padStart(2, '0');
+            }
+        }
+
         let errors = Array();
 
         if (!dia) {
@@ -92,9 +101,9 @@ app.post('/crear', async (req, res) => {
         const maxPersonasSQL = (typeof max_personas === 'undefined' || max_personas === null || max_personas === '') ? 'NULL' : `${parseInt(max_personas, 10)}`;
 
         let query = `INSERT INTO fecha 
-                (dia, hora_salida, hora_regreso, status, applyForOperator, created_at, updated_at, tour_id, max_personas) 
-                VALUES 
-                ('${dia}', '${hora_salida}', '${hora_regreso}', '${status}', '${apply_for_operator}', '${fecha}', '${fecha}', '${tour_id}', ${maxPersonasSQL})`;
+            (dia, hora_salida, hora_regreso, status, applyForOperator, created_at, updated_at, tour_id, max_personas) 
+            VALUES 
+            ('${dia}', '${hora_salida_normalizada}', '${hora_regreso}', '${status}', '${apply_for_operator}', '${fecha}', '${fecha}', '${tour_id}', ${maxPersonasSQL})`;
 
         let result = await db.pool.query(query);
         result = result[0];
@@ -119,6 +128,14 @@ app.post('/crear', async (req, res) => {
 app.put('/set', async (req, res) => {
     try {
         const { id, dia, hora_salida, hora_regreso, max_personas } = req.body
+                // Normalizar hora_salida a hh:mm
+                let hora_salida_normalizada = hora_salida;
+                if (typeof hora_salida === 'string') {
+                    const partes = hora_salida.split(':');
+                    if (partes.length >= 2) {
+                        hora_salida_normalizada = partes[0].padStart(2, '0') + ':' + partes[1].padStart(2, '0');
+                    }
+                }
         let status = req.body.status;
         let apply_for_operator = req.body.apply_for_operator;
 
@@ -172,14 +189,14 @@ app.put('/set', async (req, res) => {
         const maxPersonasSQL = (typeof max_personas === 'undefined' || max_personas === null || max_personas === '') ? 'NULL' : `${parseInt(max_personas, 10)}`;
 
         let query = `UPDATE fecha SET
-                dia              = '${dia}',
-                hora_salida      = '${hora_salida}',
-                hora_regreso     = '${hora_regreso}', 
-                status           = '${status}', 
-                applyForOperator = '${apply_for_operator}', 
-                max_personas     = ${maxPersonasSQL},
-                updated_at       = '${fecha}' 
-                WHERE id         =  ${id}`;
+            dia              = '${dia}',
+            hora_salida      = '${hora_salida_normalizada}',
+            hora_regreso     = '${hora_regreso}', 
+            status           = '${status}', 
+            applyForOperator = '${apply_for_operator}', 
+            max_personas     = ${maxPersonasSQL},
+            updated_at       = '${fecha}' 
+            WHERE id         =  ${id}`;
 
         let result = await db.pool.query(query);
         result = result[0];
