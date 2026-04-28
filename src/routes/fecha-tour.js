@@ -105,7 +105,7 @@ app.post('/crear', async (req, res) => {
 
         jwt.sign(payload, process.env.SECRET, { expiresIn: 36000 }, (error, token) => {
             if (error) throw error
-            res.status(200).json({error:false, token:token})
+            res.status(200).json({ error: false, token: token })
             //res.json(respuestaDB)
         })
 
@@ -180,10 +180,16 @@ app.put('/set', async (req, res) => {
             }
         }
 
-        res.status(200).json({ error:false, msg: "Registro actualizado con exito" })
+        res.status(200).json({ error: false, msg: "Registro actualizado con exito" })
 
     } catch (error) {
-        res.status(400).json({ error: true, details: error })
+        console.error(error); // <-- esto te lo muestra en la consola
+
+        res.status(400).json({
+            error: true,
+            message: error.message,
+            stack: error.stack
+        });
     }
 })
 
@@ -196,7 +202,7 @@ app.put('/delete/:id', async (req, res) => {
         let result = await db.pool.query(query);
         result = result[0];
 
-        res.status(200).json({ error:false, msg: "Se ha borrado la fecha de salida con exito" })
+        res.status(200).json({ error: false, msg: "Se ha borrado la fecha de salida con exito" })
 
     } catch (error) {
         res.status(400).json({ error: true, details: error })
@@ -220,7 +226,7 @@ app.put('/active', async (req, res) => {
         let result = await db.pool.query(query);
         result = result[0];
 
-        res.status(200).json({ error:false, msg: "Se ha reactivado la venta con exito" })
+        res.status(200).json({ error: false, msg: "Se ha reactivado la venta con exito" })
 
     } catch (error) {
         res.status(400).json({ error: true, details: error })
