@@ -1863,11 +1863,23 @@ app.post('/crear-admin', async (req, res) => {
             duracion = 13;
             max_pasajeros = 51;
         } else {
+            // Consulta a la tabla fecha para obtener max_personas
+            let hora = horaCompleta.split(':');
+            const diaSeleccionado = weekDay(fecha_ida);
+            let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND DATE_FORMAT(hora_salida, '%H:%i') = '${hora[0]}:${hora[1]}' LIMIT 1`;
+            let fechaRes = await db.pool.query(queryFecha);
+            let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+            let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
             query = `SELECT * FROM tour WHERE id = ${tourId} `;
             let tour = await db.pool.query(query);
             tour = tour[0][0];
             duracion = tour.duracion;
-            max_pasajeros = tour.max_pasajeros;
+            if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                max_pasajeros = parseInt(fechaCapacity, 10);
+            } else {
+                max_pasajeros = tour.max_pasajeros;
+            }
         }
         //console.log(`Duracion: ${duracion}`);
 
