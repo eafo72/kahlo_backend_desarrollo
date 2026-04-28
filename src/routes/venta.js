@@ -1867,6 +1867,7 @@ app.post('/crear-admin', async (req, res) => {
             let hora = horaCompleta.split(':');
             const diaSeleccionado = weekDay(fecha_ida);
             let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND DATE_FORMAT(hora_salida, '%H:%i') = '${hora[0]}:${hora[1]}' LIMIT 1`;
+            console.log('Query para obtener capacidad de fecha:', queryFecha);
             let fechaRes = await db.pool.query(queryFecha);
             let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
             let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
