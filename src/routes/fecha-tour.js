@@ -40,7 +40,9 @@ app.get('/obtenerbytour/:id', async (req, res) => {
 
 app.post('/crear', async (req, res) => {
     try {
-        const { dia, hora_salida, hora_regreso, status, apply_for_operator, tour_id, max_personas } = req.body
+        const { dia, hora_salida, hora_regreso, tour_id, max_personas } = req.body
+        let status = req.body.status;
+        let apply_for_operator = req.body.apply_for_operator;
 
         let errors = Array();
 
@@ -116,9 +118,17 @@ app.post('/crear', async (req, res) => {
 
 app.put('/set', async (req, res) => {
     try {
-        const { id, dia, hora_salida, hora_regreso, status, apply_for_operator, max_personas } = req.body
+        const { id, dia, hora_salida, hora_regreso, max_personas } = req.body
+        let status = req.body.status;
+        let apply_for_operator = req.body.apply_for_operator;
 
         let errors = Array();
+
+        // validar id como entero
+        const idNum = parseInt(id, 10);
+        if (isNaN(idNum)) {
+            errors.push({ msg: "El campo id debe ser un entero válido" });
+        }
 
         if (!dia) {
             errors.push({ msg: "El campo dia debe de contener un valor" });
