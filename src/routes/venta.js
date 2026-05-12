@@ -316,9 +316,25 @@ const verificarDisponibilidad = async (no_boletos, tourId, fecha, hora, tipos_bo
                     if (no_boletos > 12) {
                         return false;
                     }
-                    let queryTour = `SELECT max_pasajeros FROM tour WHERE id = ${tourId}`;
-                    let tourResult = await db.pool.query(queryTour);
-                    let max_pasajeros = tourResult[0][0]?.max_pasajeros;
+
+                    let max_pasajeros;
+                    // Consulta a la tabla fecha para obtener max_personas
+                    const diaSeleccionado = weekDay(fecha);
+                    let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND hora_salida = '${hora[0]}:${hora[1]}' AND status = 2 LIMIT 1`;
+                    let fechaRes = await db.pool.query(queryFecha);
+                    let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+                    let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
+                    query = `SELECT * FROM tour WHERE id = ${tourId} `;
+                    let tour = await db.pool.query(query);
+                    tour = tour[0][0];
+
+                    if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                        max_pasajeros = parseInt(fechaCapacity, 10);
+                    } else {
+                        max_pasajeros = tour.max_pasajeros;
+                    }
+
                     if (typeof max_pasajeros === 'number' && no_boletos > max_pasajeros) {
                         return false;
                     }
@@ -1061,7 +1077,7 @@ const handleWalletTopup = async (session) => {
         console.error('❌ Error en recarga:', error);
         throw error;
     }
-   
+
 }
 
 const handleWalletTopupFailed = async (session) => {
@@ -1491,7 +1507,7 @@ app.get('/horarios/:tourid/fecha/:fecha/boletos/:boletos', async (req, res) => {
                     }
                 } else {
                     // No hay capacidad definida en fecha: aplicar reglas anteriores
-                    if (esUltimoMiercoles) {
+                    if (esUltimoMiercoles && horaCampo === '18:00') {
                         lugares_disp = 51;
                         disponible = 51 >= boletos;
                     } else {
@@ -2183,7 +2199,7 @@ app.post('/crear-touroperador', async (req, res) => {
         let query = `SELECT * FROM usuario WHERE id = ${cliente_id}`;
         let clientResult = await db.pool.query(query);
         let client = clientResult[0];
-        
+
         if (client.length === 0) {
             return res.status(400).json({ error: true, msg: "Cliente no encontrado" });
         }
@@ -2191,10 +2207,10 @@ app.post('/crear-touroperador', async (req, res) => {
 
         // Verificar saldo suficiente
         if (parseFloat(client.saldo) < parseFloat(total)) {
-            return res.status(400).json({ 
-                error: true, 
-                msg: "Saldo insuficiente", 
-                details: `Saldo actual: $${client.saldo}, Total requerido: $${total}` 
+            return res.status(400).json({
+                error: true,
+                msg: "Saldo insuficiente",
+                details: `Saldo actual: $${client.saldo}, Total requerido: $${total}`
             });
         }
 
@@ -2228,7 +2244,7 @@ app.post('/crear-touroperador', async (req, res) => {
             let { fecha_ida, horaCompleta, boletos, tipos_boletos } = item;
 
             await validarDiaPermitido(fecha_ida, tourId);
-            
+
             const estaBloqueado = await verificarHorarioBloqueado(fecha_ida, horaCompleta, tourId);
             if (estaBloqueado) {
                 return res.status(403).json({
@@ -2250,9 +2266,9 @@ app.post('/crear-touroperador', async (req, res) => {
 
             const disponible = await verificarDisponibilidad(boletos, tourId, fecha_ida, horaCompleta, parsedTiposBoletos);
             if (!disponible) {
-                return res.status(400).json({ 
-                    error: true, 
-                    msg: "Cupo no disponible", 
+                return res.status(400).json({
+                    error: true,
+                    msg: "Cupo no disponible",
                     details: `Fecha: ${fecha_ida}, Hora: ${horaCompleta}, Boletos: ${boletos}`,
                     item_sin_disponibilidad: {
                         fecha: fecha_ida,
@@ -2288,11 +2304,24 @@ app.post('/crear-touroperador', async (req, res) => {
                     duracion = 13;
                     max_pasajeros = 51;
                 } else {
-                    query = `SELECT * FROM tour WHERE id = ${tourId}`;
-                    let tour = await connection.query(query);
+
+                    // Consulta a la tabla fecha para obtener max_personas
+                    let hora = horaCompleta.split(':');
+                    const diaSeleccionado = weekDay(fecha_ida);
+                    let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND hora_salida = '${hora[0]}:${hora[1]}' AND status = 2 LIMIT 1`;
+                    let fechaRes = await db.pool.query(queryFecha);
+                    let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+                    let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
+                    query = `SELECT * FROM tour WHERE id = ${tourId} `;
+                    let tour = await db.pool.query(query);
                     tour = tour[0][0];
                     duracion = tour.duracion;
-                    max_pasajeros = tour.max_pasajeros;
+                    if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                        max_pasajeros = parseInt(fechaCapacity, 10);
+                    } else {
+                        max_pasajeros = tour.max_pasajeros;
+                    }
                 }
 
                 // Procesar viajeTour
@@ -2344,7 +2373,7 @@ app.post('/crear-touroperador', async (req, res) => {
                              (fecha_ida, fecha_regreso, lugares_disp, created_at, updated_at, tour_id, guia_id, geo_llegada, geo_salida) 
                              VALUES 
                              ('${fecha_ida_formateada}', '${fecha_regreso}', '${max_pasajeros}', '${fecha}', '${fecha}', '${tourId}', '${guia[0].value}', '${null}', '${null}')`;
-                    
+
                     result = await connection.query(query);
                     result = result[0];
                     viajeTourId = result.insertId;
@@ -2367,9 +2396,9 @@ app.post('/crear-touroperador', async (req, res) => {
 
                 if (lugares_disp < 0) {
                     await connection.rollback();
-                    return res.status(400).json({ 
-                        error: true, 
-                        msg: "El número de boletos excede los lugares disponibles", 
+                    return res.status(400).json({
+                        error: true,
+                        msg: "El número de boletos excede los lugares disponibles",
                         details: `Fecha: ${fecha_ida}, Hora: ${horaCompleta}, Disponibilidad actual: ${lugares_disp + parseInt(boletos)}`,
                         item_sin_disponibilidad: {
                             fecha: fecha_ida,
@@ -2385,7 +2414,7 @@ app.post('/crear-touroperador', async (req, res) => {
 
                 // Generar session_id único similar a Stripe para esta reservación
                 const sessionId = 'nuba_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-                
+
                 // Insertar un registro en venta por cada boleto
                 for (let i = 0; i < parseInt(boletos); i++) {
                     // Crear venta para un boleto
@@ -2393,7 +2422,7 @@ app.post('/crear-touroperador', async (req, res) => {
                              (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, cliente_id, correo, viajeTour_id, session_id) 
                              VALUES 
                              ('V', '1', '${tipos_boletos}', '${subtotal / parseInt(boletos)}', '1', '${fecha}', '0.0', '0', '${fecha_ida_formateada}', '${fecha}', '${fecha}', '${nombre_cliente}', '${cliente_id}', '${correo}', '${viajeTourId}', '${sessionId}')`;
-                    
+
                     let ventaResult = await connection.query(query);
                     ventaResult = ventaResult[0];
 
@@ -2406,16 +2435,16 @@ app.post('/crear-touroperador', async (req, res) => {
                     // Actualizar saldo del cliente por este boleto
                     const saldoAnterior = parseFloat(client.saldo);
                     const saldoNuevo = saldoAnterior - parseFloat(subtotal / parseInt(boletos));
-                    
+
                     query = `UPDATE usuario SET saldo = '${saldoNuevo}' WHERE id = ${cliente_id}`;
                     await connection.query(query);
-                    
+
                     // Actualizar saldo del cliente para la siguiente iteración
                     client.saldo = saldoNuevo;
 
                     // Registrar movimiento de compra en tabla movimientos
                     const movimientoDescripcion = `Compra de reservación ${id_reservacion} - 1 boleto para ${fecha_ida} ${horaCompleta}`;
-                    
+
                     query = `INSERT INTO movimientos 
                              (usuario_id, monto, tipo_movimiento, descripcion, fecha_creacion, saldo_anterior, saldo_nuevo, referencia) 
                              VALUES 
@@ -2438,7 +2467,7 @@ app.post('/crear-touroperador', async (req, res) => {
             // Confirmar transacción
             await connection.commit();
 
-             // Preparar datos para el correo con descripción de las compras
+            // Preparar datos para el correo con descripción de las compras
             const reservacionesConSubtotal = reservaciones.map((reservacion) => ({
                 ...reservacion,
                 subtotal: reservacion.subtotal || 0
@@ -2458,23 +2487,23 @@ app.post('/crear-touroperador', async (req, res) => {
                 console.error("Falló envío de correo:", emailResult.error);
             }
 
-            
-            res.status(200).json({ 
-                msg: "Reservas creadas exitosamente", 
+
+            res.status(200).json({
+                msg: "Reservas creadas exitosamente",
                 reservaciones: reservaciones,
                 total_boletos: totalBoletosProcesados,
                 total_descontado: total,
                 saldo_restante: parseFloat(client.saldo),
-                error: false 
+                error: false
             });
 
         } catch (error) {
             await connection.rollback();
             console.error('Error en transacción:', error);
-            res.status(400).json({ 
-                error: true, 
-                msg: "Error procesando las reservas", 
-                details: error.message 
+            res.status(400).json({
+                error: true,
+                msg: "Error procesando las reservas",
+                details: error.message
             });
         } finally {
             connection.release();
@@ -2482,10 +2511,10 @@ app.post('/crear-touroperador', async (req, res) => {
 
     } catch (error) {
         console.error('Error en crear-touroperador:', error);
-        res.status(400).json({ 
-            error: true, 
-            msg: error.message || 'Error procesando las reservas', 
-            details: error 
+        res.status(400).json({
+            error: true,
+            msg: error.message || 'Error procesando las reservas',
+            details: error
         });
     }
 });
@@ -2603,11 +2632,24 @@ app.post('/crear-admin-cortesia', async (req, res) => {
             duracion = 13;
             max_pasajeros = 51;
         } else {
+
+            // Consulta a la tabla fecha para obtener max_personas
+            let hora = horaCompleta.split(':');
+            const diaSeleccionado = weekDay(fecha_ida);
+            let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND hora_salida = '${hora[0]}:${hora[1]}' AND status = 2 LIMIT 1`;
+            let fechaRes = await db.pool.query(queryFecha);
+            let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+            let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
             query = `SELECT * FROM tour WHERE id = ${tourId} `;
             let tour = await db.pool.query(query);
             tour = tour[0][0];
             duracion = tour.duracion;
-            max_pasajeros = tour.max_pasajeros;
+            if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                max_pasajeros = parseInt(fechaCapacity, 10);
+            } else {
+                max_pasajeros = tour.max_pasajeros;
+            }
         }
         //console.log(`Duracion: ${duracion}`);
 
@@ -3042,11 +3084,25 @@ app.post('/stripe/create-checkout-session', async (req, res) => {
             duracion = 13;
             max_pasajeros = 51;
         } else {
+
+            // Consulta a la tabla fecha para obtener max_personas
+            let hora = horaCompleta.split(':');
+            const diaSeleccionado = weekDay(fecha_ida_original);
+            let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND hora_salida = '${hora[0]}:${hora[1]}' AND status = 2 LIMIT 1`;
+            let fechaRes = await db.pool.query(queryFecha);
+            let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+            let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
             query = `SELECT * FROM tour WHERE id = ${tourId} `;
             let tour = await db.pool.query(query);
             tour = tour[0][0];
             duracion = tour.duracion;
-            max_pasajeros = tour.max_pasajeros;
+            if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+                max_pasajeros = parseInt(fechaCapacity, 10);
+            } else {
+                max_pasajeros = tour.max_pasajeros;
+            }
+
         }
 
 
@@ -3233,12 +3289,26 @@ app.post('/stripe/create-checkout-session-operator', async (req, res) => {
         let query = ``;
         let viajeTourId = null;
 
-        //info tour para calcular fecha de regreso
+        let duracion, max_pasajeros;
+
+        // Consulta a la tabla fecha para obtener max_personas
+        let hora = horaCompleta.split(':');
+        const diaSeleccionado = weekDay(fecha_ida_original);
+        let queryFecha = `SELECT * FROM fecha WHERE tour_id = ${tourId} AND dia = '${diaSeleccionado}' AND hora_salida = '${hora[0]}:${hora[1]}' AND status = 2 LIMIT 1`;
+        let fechaRes = await db.pool.query(queryFecha);
+        let fechaRow = (fechaRes[0] && fechaRes[0][0]) ? fechaRes[0][0] : null;
+        let fechaCapacity = fechaRow ? fechaRow.max_personas : null;
+
         query = `SELECT * FROM tour WHERE id = ${tourId} `;
         let tour = await db.pool.query(query);
         tour = tour[0][0];
-        let duracion = tour.duracion;
-        let max_pasajeros = tour.max_pasajeros;
+        duracion = tour.duracion;
+        if (fechaCapacity !== null && typeof fechaCapacity !== 'undefined') {
+            max_pasajeros = parseInt(fechaCapacity, 10);
+        } else {
+            max_pasajeros = tour.max_pasajeros;
+        }
+
 
         const fecha_ida_formateada = `${fecha_ida_original} ${horaCompleta}`;
 
@@ -4573,100 +4643,100 @@ app.post('/checador/entrada', async (req, res) => {
         const finDia = fechaHoy + " 23:59:59";
 
         // 🚨 VALIDAR SI AYER QUEDÓ TURNO ABIERTO
-const [salidaAyer] = await db.pool.query(
- `SELECT tipo_evento, fecha_hora
+        const [salidaAyer] = await db.pool.query(
+            `SELECT tipo_evento, fecha_hora
   FROM checador_movimientos
   WHERE colaborador_id = ?
   ORDER BY fecha_hora DESC
   LIMIT 1`,
- [usuario.id]
-);
-
-if (salidaAyer.length) {
-
-    const fechaUltimo = salidaAyer[0].fecha_hora.toISOString().split('T')[0];
-
-    // SOLO SI EL MOVIMIENTO FUE OTRO DÍA
-    if (
-        fechaUltimo !== fechaHoy &&
-        salidaAyer[0].tipo_evento !== 'salida_final' &&
-        salidaAyer[0].tipo_evento !== 'salida_eventual'
-    ) {
-        console.log("⚠️ TURNO ANTERIOR SIN CERRAR");
-
-        // 🔥 AUTOCIERRE
-        const fechaCierre = fechaUltimo + " 23:59:59";
-
-        console.log("🛠 AUTOCIERRE DE TURNO ANTERIOR:", fechaCierre);
-
-        await db.pool.query(
-            `INSERT INTO checador_movimientos
-            (colaborador_id, tipo, fecha_hora, minutos_retardo, clasificacion, autorizado, tipo_evento)
-            VALUES (?, 'salida', ?, 0, 'auto', 1, 'salida_final')`,
-            [usuario.id, fechaCierre]
+            [usuario.id]
         );
 
-        console.log("✅ Turno anterior autocerrado");
-    }
-}
+        if (salidaAyer.length) {
+
+            const fechaUltimo = salidaAyer[0].fecha_hora.toISOString().split('T')[0];
+
+            // SOLO SI EL MOVIMIENTO FUE OTRO DÍA
+            if (
+                fechaUltimo !== fechaHoy &&
+                salidaAyer[0].tipo_evento !== 'salida_final' &&
+                salidaAyer[0].tipo_evento !== 'salida_eventual'
+            ) {
+                console.log("⚠️ TURNO ANTERIOR SIN CERRAR");
+
+                // 🔥 AUTOCIERRE
+                const fechaCierre = fechaUltimo + " 23:59:59";
+
+                console.log("🛠 AUTOCIERRE DE TURNO ANTERIOR:", fechaCierre);
+
+                await db.pool.query(
+                    `INSERT INTO checador_movimientos
+            (colaborador_id, tipo, fecha_hora, minutos_retardo, clasificacion, autorizado, tipo_evento)
+            VALUES (?, 'salida', ?, 0, 'auto', 1, 'salida_final')`,
+                    [usuario.id, fechaCierre]
+                );
+
+                console.log("✅ Turno anterior autocerrado");
+            }
+        }
 
         // 4️⃣ VERIFICAR ÚLTIMO MOVIMIENTO (Solo para colaboradores normales)
         let tipoEvento = usuario.isEventual === 1 ? 'entrada_inicial_eventual' : 'entrada_inicial';
 
-       if (usuario.isEventual !== 1) {
+        if (usuario.isEventual !== 1) {
 
-    const [ultimoRows] = await db.pool.query(
-        `SELECT tipo_evento 
+            const [ultimoRows] = await db.pool.query(
+                `SELECT tipo_evento 
          FROM checador_movimientos 
          WHERE colaborador_id = ? 
          AND fecha_hora BETWEEN ? AND ?
          ORDER BY fecha_hora DESC 
          LIMIT 1`,
-        [usuario.id, inicioDia, finDia]
-    );
+                [usuario.id, inicioDia, finDia]
+            );
 
-    if (ultimoRows.length) {
-        const ultimo = ultimoRows[0].tipo_evento;
+            if (ultimoRows.length) {
+                const ultimo = ultimoRows[0].tipo_evento;
 
-          // 🚫 BLOQUEAR REINGRESO DESPUÉS DE SALIDA FINAL
-    if (ultimo === 'salida_final') {
-        console.log("⛔ Intento de reingreso después de salida final");
-        return res.json({
-            error: true,
-            message: 'Ya registraste tu salida final hoy'
-        });
-    }
+                // 🚫 BLOQUEAR REINGRESO DESPUÉS DE SALIDA FINAL
+                if (ultimo === 'salida_final') {
+                    console.log("⛔ Intento de reingreso después de salida final");
+                    return res.json({
+                        error: true,
+                        message: 'Ya registraste tu salida final hoy'
+                    });
+                }
 
-        if (ultimo === 'salida_comida') {
-            tipoEvento = 'regreso_comida';
-        } else if (ultimo === 'intento_bloqueado') {
-            tipoEvento = 'entrada_inicial';
-        } else if (
-            ultimo === 'entrada_inicial' ||
-            ultimo === 'entrada_autorizada' ||
-            ultimo === 'entrada_perdonada' ||
-            ultimo === 'regreso_comida'
-        ) {
-            return res.json({ error: true, message: 'Ya tienes una entrada registrada hoy' });
-        }
-    }
+                if (ultimo === 'salida_comida') {
+                    tipoEvento = 'regreso_comida';
+                } else if (ultimo === 'intento_bloqueado') {
+                    tipoEvento = 'entrada_inicial';
+                } else if (
+                    ultimo === 'entrada_inicial' ||
+                    ultimo === 'entrada_autorizada' ||
+                    ultimo === 'entrada_perdonada' ||
+                    ultimo === 'regreso_comida'
+                ) {
+                    return res.json({ error: true, message: 'Ya tienes una entrada registrada hoy' });
+                }
+            }
 
-    // 🚫 BLOQUEAR SEGUNDA ENTRADA SOLO SI ES entrada_inicial
-    const [entradaHoy] = await db.pool.query(
-        `SELECT id 
+            // 🚫 BLOQUEAR SEGUNDA ENTRADA SOLO SI ES entrada_inicial
+            const [entradaHoy] = await db.pool.query(
+                `SELECT id 
          FROM checador_movimientos
          WHERE colaborador_id = ?
          AND tipo_evento = 'entrada_inicial'
          AND fecha_hora BETWEEN ? AND ?
          LIMIT 1`,
-        [usuario.id, inicioDia, finDia]
-    );
+                [usuario.id, inicioDia, finDia]
+            );
 
-    if (entradaHoy.length && tipoEvento === 'entrada_inicial') {
-        console.log("⛔ SEGUNDA ENTRADA BLOQUEADA");
-        return res.json({ error: true, message: 'Ya registraste tu entrada hoy' });
-    }
-}
+            if (entradaHoy.length && tipoEvento === 'entrada_inicial') {
+                console.log("⛔ SEGUNDA ENTRADA BLOQUEADA");
+                return res.json({ error: true, message: 'Ya registraste tu entrada hoy' });
+            }
+        }
 
         // 5️⃣ OBTENER HORARIO
         let horaProgramada = null;
@@ -4676,7 +4746,7 @@ if (salidaAyer.length) {
             const horaActual = ahoraCDMX.toTimeString().split(' ')[0];
             console.log("👷 Buscando en horarios_eventuales un horario disponible...");
 
-      
+
             // Buscamos el horario más cercano a la hora actual que NO haya sido utilizado
             const [eventualRows] = await db.pool.query(
                 `SELECT id, hora_entrada 
@@ -4745,7 +4815,7 @@ if (salidaAyer.length) {
                 VALUES (?, 'entrada', ?, 0, 'normal', 0, 'regreso_comida')`,
                 [usuario.id, fechaMysql]
             );
-             console.log(`🍽 REGRESO_COMIDA registrada para ID: ${usuario.id}`);
+            console.log(`🍽 REGRESO_COMIDA registrada para ID: ${usuario.id}`);
             return res.json({ error: false, message: 'Regreso de comida exitoso' });
         }
 
@@ -4828,13 +4898,13 @@ if (salidaAyer.length) {
             }
         }
 
-       // 9️⃣ ENTRADA NORMAL con eventual
-              await db.pool.query(
-             `INSERT INTO checador_movimientos
+        // 9️⃣ ENTRADA NORMAL con eventual
+        await db.pool.query(
+            `INSERT INTO checador_movimientos
               (colaborador_id, tipo, fecha_hora, minutos_retardo, clasificacion, autorizado, tipo_evento)
                VALUES (?, 'entrada', ?, ?, ?, 0, ?)`, // <--- El último ? es para tipoEvento
-                [usuario.id, fechaMysql, minutosRetardo, clasificacion, tipoEvento]
-               );
+            [usuario.id, fechaMysql, minutosRetardo, clasificacion, tipoEvento]
+        );
 
         // SI ES EVENTUAL, MARCAMOS EL HORARIO COMO USADO
         if (usuario.isEventual === 1 && horarioEventualId) {
@@ -4859,170 +4929,170 @@ if (salidaAyer.length) {
 });
 
 app.post('/checador/salida', async (req, res) => {
-  try {
-    console.log("====================================");
-    console.log("📤 NUEVA SOLICITUD DE SALIDA");
-    console.log("Body:", req.body);
+    try {
+        console.log("====================================");
+        console.log("📤 NUEVA SOLICITUD DE SALIDA");
+        console.log("Body:", req.body);
 
-    const { qr } = req.body;
+        const { qr } = req.body;
 
-    // 1️⃣ VALIDAR QR
-    if (!qr || typeof qr !== 'string') {
-      console.log("❌ QR requerido");
-      return res.json({ error: true, message: 'QR requerido' });
-    }
+        // 1️⃣ VALIDAR QR
+        if (!qr || typeof qr !== 'string') {
+            console.log("❌ QR requerido");
+            return res.json({ error: true, message: 'QR requerido' });
+        }
 
-    const partes = qr.split('-');
-    if (partes.length !== 3) {
-      console.log("❌ QR inválido estructura");
-      return res.json({ error: true, message: 'QR inválido' });
-    }
+        const partes = qr.split('-');
+        if (partes.length !== 3) {
+            console.log("❌ QR inválido estructura");
+            return res.json({ error: true, message: 'QR inválido' });
+        }
 
-    const codigoBase = partes[0];
-    const tipoSalida = partes[1]; // '1' para comida, '2' para final
-    const idUsuarioRaw = partes[2];
+        const codigoBase = partes[0];
+        const tipoSalida = partes[1]; // '1' para comida, '2' para final
+        const idUsuarioRaw = partes[2];
 
-    if (codigoBase !== 'SALIDA2026') {
-      console.log("❌ Código base inválido");
-      return res.json({ error: true, message: 'Código inválido' });
-    }
+        if (codigoBase !== 'SALIDA2026') {
+            console.log("❌ Código base inválido");
+            return res.json({ error: true, message: 'Código inválido' });
+        }
 
-    if (tipoSalida !== '1' && tipoSalida !== '2') {
-      console.log("❌ Tipo salida inválido");
-      return res.json({ error: true, message: 'Tipo inválido' });
-    }
+        if (tipoSalida !== '1' && tipoSalida !== '2') {
+            console.log("❌ Tipo salida inválido");
+            return res.json({ error: true, message: 'Tipo inválido' });
+        }
 
-    const idUsuario = parseInt(idUsuarioRaw);
-    if (isNaN(idUsuario)) {
-      console.log("❌ ID usuario inválido");
-      return res.json({ error: true, message: 'Usuario inválido' });
-    }
+        const idUsuario = parseInt(idUsuarioRaw);
+        if (isNaN(idUsuario)) {
+            console.log("❌ ID usuario inválido");
+            return res.json({ error: true, message: 'Usuario inválido' });
+        }
 
-    // 🕒 Hora CDMX REAL
-    const ahoraCDMX = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
-    );
+        // 🕒 Hora CDMX REAL
+        const ahoraCDMX = new Date(
+            new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
+        );
 
-    const fechaMysql = ahoraCDMX
-      .toLocaleString("sv-SE")
-      .replace('T', ' ');
+        const fechaMysql = ahoraCDMX
+            .toLocaleString("sv-SE")
+            .replace('T', ' ');
 
-    const fechaHoy = fechaMysql.split(' ')[0];
-    const inicioDia = fechaHoy + " 00:00:00";
-    const finDia = fechaHoy + " 23:59:59";
+        const fechaHoy = fechaMysql.split(' ')[0];
+        const inicioDia = fechaHoy + " 00:00:00";
+        const finDia = fechaHoy + " 23:59:59";
 
-    // 2️⃣ VALIDAR USUARIO ACTIVO Y OBTENER TIPO
-    const [usuarioRows] = await db.pool.query(
-      `SELECT id, status, isEventual FROM usuario WHERE id = ? LIMIT 1`,
-      [idUsuario]
-    );
+        // 2️⃣ VALIDAR USUARIO ACTIVO Y OBTENER TIPO
+        const [usuarioRows] = await db.pool.query(
+            `SELECT id, status, isEventual FROM usuario WHERE id = ? LIMIT 1`,
+            [idUsuario]
+        );
 
-    if (!usuarioRows.length || usuarioRows[0].status !== 1) {
-      console.log("❌ Usuario no válido");
-      return res.json({ error: true, message: 'Usuario no válido' });
-    }
+        if (!usuarioRows.length || usuarioRows[0].status !== 1) {
+            console.log("❌ Usuario no válido");
+            return res.json({ error: true, message: 'Usuario no válido' });
+        }
 
-    const usuario = usuarioRows[0];
+        const usuario = usuarioRows[0];
 
-   // 3️⃣ OBTENER ÚLTIMO MOVIMIENTO (DE CUALQUIER DÍA)
-const [ultimoRows] = await db.pool.query(
-  `SELECT tipo_evento, fecha_hora
+        // 3️⃣ OBTENER ÚLTIMO MOVIMIENTO (DE CUALQUIER DÍA)
+        const [ultimoRows] = await db.pool.query(
+            `SELECT tipo_evento, fecha_hora
    FROM checador_movimientos
    WHERE colaborador_id = ?
    ORDER BY fecha_hora DESC
    LIMIT 1`,
-  [idUsuario]
-);
+            [idUsuario]
+        );
 
-if (!ultimoRows.length) {
-  console.log("❌ No tiene entrada previa");
-  return res.json({ error: true, message: 'No tiene registros previos' });
-}
-
-const ultimoEvento = ultimoRows[0].tipo_evento;
-console.log("🔎 Último evento detectado:", ultimoEvento);
-
-    let nuevoEvento = null;
-
-    // --- LÓGICA DIFERENCIADA PARA EVENTUALES ---
-    if (usuario.isEventual === 1) {
-      // Para el eventual no validamos si es comida o final, 
-      // simplemente registramos que está saliendo de su visita.
-      nuevoEvento = 'salida_eventual';
-    } 
-    // --- LÓGICA PARA COLABORADORES NORMALES (Tú código original) ---
-    else {
-      // 🔒 BLOQUEAR SI YA TIENE SALIDA FINAL
-      if (ultimoEvento === 'salida_final') {
-        console.log("❌ Ya tiene salida final");
-        return res.json({ error: true, message: 'Ya registró salida final' });
-      }
-
-      // 🔹 LÓGICA SALIDA COMIDA (TIPO 1)
-      if (tipoSalida === '1') {
-        if (
-          ultimoEvento !== 'entrada_inicial' &&
-          ultimoEvento !== 'entrada_autorizada' &&
-          ultimoEvento !== 'entrada_perdonada'
-        ) {
-          console.log("❌ Secuencia inválida para comida");
-          return res.json({ error: true, message: 'Debes estar en turno para salir a comer' });
+        if (!ultimoRows.length) {
+            console.log("❌ No tiene entrada previa");
+            return res.json({ error: true, message: 'No tiene registros previos' });
         }
-        nuevoEvento = 'salida_comida';
-      }
 
-      // 🔹 LÓGICA SALIDA FINAL (TIPO 2)
-      if (tipoSalida === '2') {
-        if (
-          ultimoEvento !== 'entrada_inicial' &&
-          ultimoEvento !== 'regreso_comida' &&
-          ultimoEvento !== 'entrada_autorizada' &&
-          ultimoEvento !== 'entrada_perdonada'
-        ) {
-          console.log("❌ Secuencia inválida para salida final");
-          return res.json({ error: true, message: 'Secuencia de salida no permitida' });
+        const ultimoEvento = ultimoRows[0].tipo_evento;
+        console.log("🔎 Último evento detectado:", ultimoEvento);
+
+        let nuevoEvento = null;
+
+        // --- LÓGICA DIFERENCIADA PARA EVENTUALES ---
+        if (usuario.isEventual === 1) {
+            // Para el eventual no validamos si es comida o final, 
+            // simplemente registramos que está saliendo de su visita.
+            nuevoEvento = 'salida_eventual';
         }
-        nuevoEvento = 'salida_final';
-      }
-    }
+        // --- LÓGICA PARA COLABORADORES NORMALES (Tú código original) ---
+        else {
+            // 🔒 BLOQUEAR SI YA TIENE SALIDA FINAL
+            if (ultimoEvento === 'salida_final') {
+                console.log("❌ Ya tiene salida final");
+                return res.json({ error: true, message: 'Ya registró salida final' });
+            }
 
-    if (!nuevoEvento) {
-      return res.json({ error: true, message: 'Error al procesar tipo de salida' });
-    }
+            // 🔹 LÓGICA SALIDA COMIDA (TIPO 1)
+            if (tipoSalida === '1') {
+                if (
+                    ultimoEvento !== 'entrada_inicial' &&
+                    ultimoEvento !== 'entrada_autorizada' &&
+                    ultimoEvento !== 'entrada_perdonada'
+                ) {
+                    console.log("❌ Secuencia inválida para comida");
+                    return res.json({ error: true, message: 'Debes estar en turno para salir a comer' });
+                }
+                nuevoEvento = 'salida_comida';
+            }
 
-    // 🛡 RECHECK ANTIDOBLE CLIC (OPCIONAL PERO RECOMENDADO)
-    const [recheckRows] = await db.pool.query(
-      `SELECT tipo_evento FROM checador_movimientos
+            // 🔹 LÓGICA SALIDA FINAL (TIPO 2)
+            if (tipoSalida === '2') {
+                if (
+                    ultimoEvento !== 'entrada_inicial' &&
+                    ultimoEvento !== 'regreso_comida' &&
+                    ultimoEvento !== 'entrada_autorizada' &&
+                    ultimoEvento !== 'entrada_perdonada'
+                ) {
+                    console.log("❌ Secuencia inválida para salida final");
+                    return res.json({ error: true, message: 'Secuencia de salida no permitida' });
+                }
+                nuevoEvento = 'salida_final';
+            }
+        }
+
+        if (!nuevoEvento) {
+            return res.json({ error: true, message: 'Error al procesar tipo de salida' });
+        }
+
+        // 🛡 RECHECK ANTIDOBLE CLIC (OPCIONAL PERO RECOMENDADO)
+        const [recheckRows] = await db.pool.query(
+            `SELECT tipo_evento FROM checador_movimientos
        WHERE colaborador_id = ? AND fecha_hora BETWEEN ? AND ?
        ORDER BY fecha_hora DESC LIMIT 1`,
-      [idUsuario, inicioDia, finDia]
-    );
+            [idUsuario, inicioDia, finDia]
+        );
 
-    if (recheckRows.length && recheckRows[0].tipo_evento === nuevoEvento) {
-      console.log("⚠️ Registro duplicado evitado");
-      return res.json({ error: true, message: 'Registro ya procesado' });
-    }
+        if (recheckRows.length && recheckRows[0].tipo_evento === nuevoEvento) {
+            console.log("⚠️ Registro duplicado evitado");
+            return res.json({ error: true, message: 'Registro ya procesado' });
+        }
 
-    // 4️⃣ INSERTAR MOVIMIENTO
-    await db.pool.query(
-      `INSERT INTO checador_movimientos
+        // 4️⃣ INSERTAR MOVIMIENTO
+        await db.pool.query(
+            `INSERT INTO checador_movimientos
        (colaborador_id, tipo, fecha_hora, minutos_retardo, clasificacion, autorizado, tipo_evento)
        VALUES (?, 'salida', ?, 0, 'normal', 0, ?)`,
-      [idUsuario, fechaMysql, nuevoEvento]
-    );
+            [idUsuario, fechaMysql, nuevoEvento]
+        );
 
-    console.log(`✅ ${nuevoEvento.toUpperCase()} registrada para ID: ${idUsuario}`);
-    console.log("====================================");
+        console.log(`✅ ${nuevoEvento.toUpperCase()} registrada para ID: ${idUsuario}`);
+        console.log("====================================");
 
-    return res.json({
-      error: false,
-      message: `Salida (${nuevoEvento.replace('_', ' ')}) registrada con éxito`
-    });
+        return res.json({
+            error: false,
+            message: `Salida (${nuevoEvento.replace('_', ' ')}) registrada con éxito`
+        });
 
-  } catch (error) {
-    console.error('🔥 ERROR EN SALIDA:', error);
-    return res.json({ error: true, message: 'Error interno del servidor', detalle: error.message });
-  }
+    } catch (error) {
+        console.error('🔥 ERROR EN SALIDA:', error);
+        return res.json({ error: true, message: 'Error interno del servidor', detalle: error.message });
+    }
 });
 
 app.get('/checador/movimientos', async (req, res) => {
@@ -5043,150 +5113,150 @@ app.get('/checador/movimientos', async (req, res) => {
 })
 
 app.post('/checador/biometrico', async (req, res) => {
-  try {
+    try {
 
-    console.log("====================================");
-    console.log("🧠 BIOMÉTRICO - Nueva lectura");
+        console.log("====================================");
+        console.log("🧠 BIOMÉTRICO - Nueva lectura");
 
-    const { qr } = req.body;
+        const { qr } = req.body;
 
-    // 1️⃣ VALIDAR QR
-    if (!qr || typeof qr !== 'string' || !qr.endsWith('-Z')) {
-      return res.json({ error: true, message: 'QR inválido' });
-    }
+        // 1️⃣ VALIDAR QR
+        if (!qr || typeof qr !== 'string' || !qr.endsWith('-Z')) {
+            return res.json({ error: true, message: 'QR inválido' });
+        }
 
-    const match = qr.match(/^\d+/);
-    if (!match) {
-      return res.json({ error: true, message: 'QR formato incorrecto' });
-    }
+        const match = qr.match(/^\d+/);
+        if (!match) {
+            return res.json({ error: true, message: 'QR formato incorrecto' });
+        }
 
-    const usuarioId = parseInt(match[0]);
+        const usuarioId = parseInt(match[0]);
 
-    // 2️⃣ VALIDAR USUARIO
-    const [usuarioRows] = await db.pool.query(
-      `SELECT id, status FROM usuario WHERE id = ? LIMIT 1`,
-      [usuarioId]
-    );
+        // 2️⃣ VALIDAR USUARIO
+        const [usuarioRows] = await db.pool.query(
+            `SELECT id, status FROM usuario WHERE id = ? LIMIT 1`,
+            [usuarioId]
+        );
 
-    if (!usuarioRows.length || usuarioRows[0].status !== 1) {
-      return res.json({ error: true, message: 'Usuario no válido' });
-    }
+        if (!usuarioRows.length || usuarioRows[0].status !== 1) {
+            return res.json({ error: true, message: 'Usuario no válido' });
+        }
 
-    // 🕒 3️⃣ FECHA CDMX
-    const ahoraCDMX = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
-    );
+        // 🕒 3️⃣ FECHA CDMX
+        const ahoraCDMX = new Date(
+            new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
+        );
 
-    const fechaMysql = ahoraCDMX
-      .toLocaleString("sv-SE")
-      .replace('T', ' ');
+        const fechaMysql = ahoraCDMX
+            .toLocaleString("sv-SE")
+            .replace('T', ' ');
 
-    const fechaHoy = fechaMysql.split(' ')[0];
+        const fechaHoy = fechaMysql.split(' ')[0];
 
-    const inicioDia = `${fechaHoy} 00:00:00`;
-    const finDia = `${fechaHoy} 23:59:59`;
+        const inicioDia = `${fechaHoy} 00:00:00`;
+        const finDia = `${fechaHoy} 23:59:59`;
 
-    // 4️⃣ ÚLTIMO MOVIMIENTO DEL DÍA
-    const [ultimoRows] = await db.pool.query(
-      `SELECT tipo_evento
+        // 4️⃣ ÚLTIMO MOVIMIENTO DEL DÍA
+        const [ultimoRows] = await db.pool.query(
+            `SELECT tipo_evento
        FROM checador_movimientos
        WHERE colaborador_id = ?
        AND fecha_hora BETWEEN ? AND ?
        ORDER BY id DESC
        LIMIT 1`,
-      [usuarioId, inicioDia, finDia]
-    );
+            [usuarioId, inicioDia, finDia]
+        );
 
-    const ultimoEvento = ultimoRows.length
-      ? ultimoRows[0].tipo_evento
-      : null;
+        const ultimoEvento = ultimoRows.length
+            ? ultimoRows[0].tipo_evento
+            : null;
 
-    console.log("🔎 Último evento hoy:", ultimoEvento);
+        console.log("🔎 Último evento hoy:", ultimoEvento);
 
-    let destino = null;
-    let qrSalida = null;
+        let destino = null;
+        let qrSalida = null;
 
-    // 5️⃣ DECISIÓN INTELIGENTE (FLUJO LIMPIO)
-    if (!ultimoEvento) {
-      // 👉 No ha checado hoy
-      destino = "entrada";
+        // 5️⃣ DECISIÓN INTELIGENTE (FLUJO LIMPIO)
+        if (!ultimoEvento) {
+            // 👉 No ha checado hoy
+            destino = "entrada";
 
-    } else if (
-      ultimoEvento === 'salida_comida' ||
-      ultimoEvento === 'intento_bloqueado'
-    ) {
-      // 👉 Regresa a trabajar
-      destino = "entrada";
+        } else if (
+            ultimoEvento === 'salida_comida' ||
+            ultimoEvento === 'intento_bloqueado'
+        ) {
+            // 👉 Regresa a trabajar
+            destino = "entrada";
 
-    } else if (
-      ultimoEvento === 'entrada_inicial' ||
-      ultimoEvento === 'entrada_autorizada' ||
-      ultimoEvento === 'entrada_perdonada'
-    ) {
-      // 👉 Se va a comida
-      destino = "salida";
-      qrSalida = `SALIDA2026-1-${usuarioId}`;
+        } else if (
+            ultimoEvento === 'entrada_inicial' ||
+            ultimoEvento === 'entrada_autorizada' ||
+            ultimoEvento === 'entrada_perdonada'
+        ) {
+            // 👉 Se va a comida
+            destino = "salida";
+            qrSalida = `SALIDA2026-1-${usuarioId}`;
 
-    } else if (ultimoEvento === 'regreso_comida') {
-      // 👉 Sale definitivamente
-      destino = "salida";
-      qrSalida = `SALIDA2026-2-${usuarioId}`;
+        } else if (ultimoEvento === 'regreso_comida') {
+            // 👉 Sale definitivamente
+            destino = "salida";
+            qrSalida = `SALIDA2026-2-${usuarioId}`;
 
-    } else if (ultimoEvento === 'salida_final') {
-      return res.json({
-        error: true,
-        message: 'Ya registraste tu salida final hoy'
-      });
+        } else if (ultimoEvento === 'salida_final') {
+            return res.json({
+                error: true,
+                message: 'Ya registraste tu salida final hoy'
+            });
+        }
+
+        // 6️⃣ REDIRECCIÓN
+
+        if (destino === "entrada") {
+
+            console.log("➡️ ENTRADA");
+
+            const response = await fetch('http://127.0.0.1:4000/venta/checador/entrada', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qr })
+            });
+
+            const data = await response.json();
+            console.log("📥 RESPUESTA ENTRADA:", data);
+            return res.json(data);
+        }
+
+        if (destino === "salida") {
+
+            console.log("➡️ SALIDA:", qrSalida);
+
+            const response = await fetch('http://127.0.0.1:4000/venta/checador/salida', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qr: qrSalida })
+            });
+
+            const data = await response.json();
+            return res.json(data);
+        }
+
+        // ⚠️ fallback
+        return res.json({
+            error: true,
+            message: 'No se pudo determinar acción'
+        });
+
+    } catch (error) {
+
+        console.error("🔥 ERROR BIOMÉTRICO:", error);
+
+        return res.json({
+            error: true,
+            message: 'Error interno',
+            detalle: error.message
+        });
+
     }
-
-    // 6️⃣ REDIRECCIÓN
-
-    if (destino === "entrada") {
-
-      console.log("➡️ ENTRADA");
-
-      const response = await fetch('http://127.0.0.1:4000/venta/checador/entrada', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr })
-      });
-
-      const data = await response.json();
-      console.log("📥 RESPUESTA ENTRADA:", data);
-      return res.json(data);
-    }
-
-    if (destino === "salida") {
-
-      console.log("➡️ SALIDA:", qrSalida);
-
-      const response = await fetch('http://127.0.0.1:4000/venta/checador/salida', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr: qrSalida })
-      });
-
-      const data = await response.json();
-      return res.json(data);
-    }
-
-    // ⚠️ fallback
-    return res.json({
-      error: true,
-      message: 'No se pudo determinar acción'
-    });
-
-  } catch (error) {
-
-    console.error("🔥 ERROR BIOMÉTRICO:", error);
-
-    return res.json({
-      error: true,
-      message: 'Error interno',
-      detalle: error.message
-    });
-
-  }
 });
 
 // ==========================================
@@ -5333,13 +5403,13 @@ app.post('/autorizaciones/perdonar', async (req, res) => {
         await connection.beginTransaction();
 
         console.log("💰 INICIANDO PROCESO DE PERDÓN DE RETARDO");
-        const { 
-            id_usuario_colaborador, 
-            id_usuario_admin, 
+        const {
+            id_usuario_colaborador,
+            id_usuario_admin,
             fecha, // Formato YYYY-MM-DD
-            minutos_retraso, 
-            motivo, 
-            tipo_autorizacion 
+            minutos_retraso,
+            motivo,
+            tipo_autorizacion
         } = req.body;
 
         // Validaciones básicas
@@ -5389,9 +5459,9 @@ app.post('/autorizaciones/perdonar', async (req, res) => {
         await connection.commit();
         console.log("✅ TODO ACTUALIZADO: Auditoría guardada, movimiento corregido y solicitud cerrada.");
 
-        return res.json({ 
-            error: false, 
-            message: 'Retardo perdonado. El registro de asistencia se ha corregido a 0 minutos.' 
+        return res.json({
+            error: false,
+            message: 'Retardo perdonado. El registro de asistencia se ha corregido a 0 minutos.'
         });
 
     } catch (error) {
@@ -7321,10 +7391,10 @@ const basicAuthToken = Buffer
 /* ============================================
     🏆 CONFIGURACIÓN Y CONTROL GLOBAL
 ============================================ */
-const TOTEM_ID = "TOTEM-1"; 
+const TOTEM_ID = "TOTEM-1";
 
 // Usamos un Map para guardar el pinpad_request_id y su estatus actual
-if (!global.pagosClip) global.pagosClip = new Map(); 
+if (!global.pagosClip) global.pagosClip = new Map();
 
 /* ============================================
    1. CREAR PAGO
@@ -7477,7 +7547,7 @@ app.post('/clip/webhook', express.json(), async (req, res) => {
    4. ACTUALIZAR ESTATUS DESDE CLIP
 ============================================ */
 async function actualizarEstatusDesdeClip(id) {
- 
+
     try {
         const response = await fetch(
             `${CLIP_CONFIG.baseURL}/f2f/pinpad/v1/payment?pinpadRequestId=${id}`,
@@ -7505,9 +7575,9 @@ async function actualizarEstatusDesdeClip(id) {
         let status = data.status;
 
         // 🔄 NORMALIZACIÓN
-        if (['CREATED','IN_PROGRESS','PENDING'].includes(status)) status = 'PENDING';
-        if (['COMPLETED','APPROVED'].includes(status)) status = 'COMPLETED';
-        if (['FAILED','REJECTED','CANCELLED','CANCELED'].includes(status)) status = 'FAILED';
+        if (['CREATED', 'IN_PROGRESS', 'PENDING'].includes(status)) status = 'PENDING';
+        if (['COMPLETED', 'APPROVED'].includes(status)) status = 'COMPLETED';
+        if (['FAILED', 'REJECTED', 'CANCELLED', 'CANCELED'].includes(status)) status = 'FAILED';
 
         const reg = global.pagosClip.get(id);
 
@@ -7683,7 +7753,7 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
             const [clientRows] = await connection.query('SELECT nombres, apellidos FROM usuario WHERE id = ? LIMIT 1', [metadata.cliente_id]);
             if (clientRows && clientRows[0]) {
                 const c = clientRows[0];
-                id_reservacion = `${ventaId}E${helperName((c.nombres||'').split(' '))}${helperName((c.apellidos||'').split(' '))}`;
+                id_reservacion = `${ventaId}E${helperName((c.nombres || '').split(' '))}${helperName((c.apellidos || '').split(' '))}`;
             }
         }
 
@@ -7763,8 +7833,8 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
 
     } catch (error) {
         if (connection) {
-            try { await connection.rollback(); } catch(e){}
-            try { connection.release(); } catch(e){}
+            try { await connection.rollback(); } catch (e) { }
+            try { connection.release(); } catch (e) { }
         }
         console.error('Error creando sesión de Stripe para evento especial:', error);
         return res.status(500).json({ error: true, msg: error.message || 'Error interno' });
