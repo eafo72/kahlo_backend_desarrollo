@@ -7667,10 +7667,10 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
     }
 
     const amountInCents = Math.round(total * 100);
-    const no_boletos = Number(metadata?.no_boletos) || 1;
-    const eventoId = metadata?.eventoId || metadata?.evento_id || null;
-    const fecha = metadata?.fecha; // expected 'YYYY-MM-DD'
-    const horaRaw = metadata?.hora; // expected 'HH:mm' or 'HH:mm:ss'
+    const no_boletos = Number(metadata?.no_boletos);
+    const eventoId = metadata?.tourId || metadata?.eventoId || null;
+    const fecha = metadata?.fecha_ida; // expected 'YYYY-MM-DD'
+    const horaRaw = metadata?.horaCompleta; // expected 'HH:mm' or 'HH:mm:ss'
 
     // Validar que venga cliente_id (no debe ser null/0/indefinido)
     const clienteIdRaw = metadata?.cliente_id ?? metadata?.clienteId ?? null;
@@ -7781,8 +7781,8 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
                 price_data: {
                     currency: 'mxn',
                     product_data: {
-                        name: metadata?.descripcion || 'Evento Especial',
-                        description: metadata?.descripcion || 'Pago de evento especial'
+                        name: 'Evento Especial',
+                        description: 'Pago de evento especial'
                     },
                     unit_amount: amountInCents
                 },
