@@ -7704,8 +7704,8 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
             return res.status(404).json({ error: true, msg: 'Horario no encontrado para ese evento/fecha/hora' });
         }
 
-        const cupoDisponible = Number(horario.cupo_disponible || 0);
-        if (cupoDisponible < no_boletos) {
+        const cupoMaxDisponible = Number(horario.cupo_total);
+        if (cupoMaxDisponible < no_boletos) {
             await connection.rollback();
             connection.release();
             return res.status(200).json({ error: true, msg: 'Cupo no disponible' });
@@ -7732,14 +7732,17 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
         // Asegurar que exista un registro en `viajeTour` para este horario del evento.
         // Usaremos `viajeTour` para referenciar en `venta` y para manejar disponibilidad.
         let viajeTourId = null;
+        let disponibilidad = 0;
         // Buscar viajeTour que corresponda a esta fecha/hora y al evento (tour_id = eventoId)
-        const [vtRows] = await connection.query('SELECT id FROM viajeTour WHERE fecha_ida = ? AND tour_id = ? LIMIT 1', [fecha_evento_hora, eventoId]);
+        const [vtRows] = await connection.query('SELECT id, lugares_disp FROM viajeTour WHERE fecha_ida = ? AND tour_id = ? LIMIT 1', [fecha_evento_hora, eventoId]);
         if (vtRows && vtRows[0]) {
             viajeTourId = vtRows[0].id;
+            disponibilidad = vtRows[0].lugares_disp;
         } else {
             // Al crear, asegurarnos de almacenar el tour_id (eventoId) — no puede ser NULL
             const [insVt] = await connection.query(`INSERT INTO viajeTour (fecha_ida, fecha_regreso, lugares_disp, created_at, updated_at, tour_id) VALUES (?, ?, ?, ?, ?, ?)`, [fecha_evento_hora, fecha_evento_hora, horario.cupo_total, fechaNow, fechaNow, eventoId]);
             viajeTourId = insVt.insertId;
+            disponibilidad = horario.cupo_total;
         }
 
         const insertQuery = `INSERT INTO venta (id_reservacion, no_boletos, tipos_boletos, total, pagado, fecha_compra, comision, status_traspaso, fecha_comprada, created_at, updated_at, nombre_cliente, correo, cliente_id, viajeTour_id) VALUES (?, ?, ?, '0', '0', ?, '0.0', '0', ?, ?, ?, ?, ?, ?, ?)`;
@@ -7759,17 +7762,12 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
 
         await connection.query('UPDATE venta SET id_reservacion = ? WHERE id = ?', [id_reservacion, ventaId]);
 
-        // 2) Reducir cupo disponible en el horario
-        const newCupo = Math.max(0, cupoDisponible - no_boletos);
-        await connection.query('UPDATE eventos_especiales_horarios SET cupo_disponible = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, horario.id]);
-
-        // 2b) Sincronizar la disponibilidad en `viajeTour` (crear/actualizar lugares_disp)
-        try {
-            await connection.query('UPDATE viajeTour SET lugares_disp = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, viajeTourId]);
-        } catch (e) {
-            // si falla por algún motivo, loguear pero no bloquear la creación de la sesión Stripe
-            console.warn('No se pudo actualizar viajeTour.lugares_disp:', e.message || e);
-        }
+        // 2) Calcular cupo disponible
+        const newCupo = Math.max(0, disponibilidad - no_boletos);
+        
+        //actualizar cupo en viajeTour
+        await connection.query('UPDATE viajeTour SET lugares_disp = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, viajeTourId]);
+       
 
         // Commit para confirmar la reserva temporal
         await connection.commit();
