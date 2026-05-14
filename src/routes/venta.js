@@ -7767,6 +7767,9 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
         
         //actualizar cupo en viajeTour
         await connection.query('UPDATE viajeTour SET lugares_disp = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, viajeTourId]);
+
+        //actualizar cupo en horarios
+        await connection.query('UPDATE eventos_especiales_horarios SET cupo_disponible = ?, updatedat = ? WHERE id = ?', [newCupo, fechaNow, horario.id]);
        
 
         // Commit para confirmar la reserva temporal
