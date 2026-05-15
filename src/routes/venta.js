@@ -6461,7 +6461,7 @@ app.post('/stripe/cancelar-compra', async (req, res) => {
         let horario = null;
         if (esEventoEspecial) {
             //obtener el evento_id del viajeTour
-            const [viajeTourRows] = await connection.query('SELECT tour_id FROM viajeTour WHERE id = ?', [viajeTourId]);
+            const [viajeTourRows] = await connection.query('SELECT tour_id, fecha_ida FROM viajeTour WHERE id = ?', [viajeTourId]);
             const tourId = viajeTourRows[0].tour_id;
             const fechaTour =  viajeTourRows[0].fecha_ida.toISOString().split('T')[0]; // obtener solo la fecha en formato YYYY-MM-DD
             const horaTour =   viajeTourRows[0].fecha_ida.toISOString().split('T')[1].substring(0,8); // obtener solo la hora en formato HH:MM
