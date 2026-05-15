@@ -6449,6 +6449,35 @@ app.post('/stripe/cancelar-compra', async (req, res) => {
         const nombre_cliente = rows[0].nombre_cliente;
         const correo = rows[0].correo;
         const total = rows[0].total;
+        
+        const tipos_boletos = rows[0].tipos_boletos;
+        const boletosObj = JSON.parse(tipos_boletos);
+        const keys = Object.keys(boletosObj);
+
+        // verificar si existe alguna key que empiece con "tipo_"  devuelve true o false
+        const esEventoEspecial = keys.some(key => key.startsWith('tipo_'));
+
+        // Si es evento especial, obtener el horario para actualizar su cupo
+        let horario = null;
+        if (esEventoEspecial) {
+            //obtener el evento_id del viajeTour
+            const [viajeTourRows] = await connection.query('SELECT tour_id FROM viajeTour WHERE id = ?', [viajeTourId]);
+            const tourId = viajeTourRows[0].tour_id;
+            const fechaTour =  viajeTourRows[0].fecha_ida.toISOString().split('T')[0]; // obtener solo la fecha en formato YYYY-MM-DD
+            const horaTour =   viajeTourRows[0].fecha_ida.toISOString().split('T')[1].substring(0,8); // obtener solo la hora en formato HH:MM
+
+            //obtener el id del horario de eventos especiales relacionado con ese tour_id, fecha y hora
+            const selectQuery = `SELECT id FROM eventos_especiales_horarios WHERE evento_id = ? AND fecha = ? AND activo = 1 AND hora_inicio = ?`;
+            const [rows] = await connection.query(selectQuery, [tourId, fechaTour, horaTour]);
+            horario = rows[0];
+
+            if (!horario) {
+                await connection.rollback();
+                connection.release();
+                return res.status(404).json({ error: true, msg: 'Horario no encontrado para ese evento/fecha/hora' });
+            }
+        }
+
 
         const fechaHora = separarFechaHora(rows[0].fecha_comprada);
 
@@ -6471,6 +6500,11 @@ app.post('/stripe/cancelar-compra', async (req, res) => {
             'UPDATE viajeTour SET lugares_disp = lugares_disp + ?, updated_at = ? WHERE id = ?',
             [boletos, fecha, viajeTourId]
         );
+
+
+        if (esEventoEspecial) {
+            await connection.query('UPDATE eventos_especiales_horarios SET cupo_disponible = cupo_disponible + ?, updated_at = ? WHERE id = ?', [boletos, fecha, horario.id]);
+        }
 
         await connection.commit();
         connection.release();
@@ -7764,13 +7798,13 @@ app.post('/stripe/create-checkout-session-evento-especial', async (req, res) => 
 
         // 2) Calcular cupo disponible
         const newCupo = Math.max(0, disponibilidad - no_boletos);
-        
+
         //actualizar cupo en viajeTour
         await connection.query('UPDATE viajeTour SET lugares_disp = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, viajeTourId]);
 
         //actualizar cupo en horarios
         await connection.query('UPDATE eventos_especiales_horarios SET cupo_disponible = ?, updated_at = ? WHERE id = ?', [newCupo, fechaNow, horario.id]);
-       
+
 
         // Commit para confirmar la reserva temporal
         await connection.commit();
